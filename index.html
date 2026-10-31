@@ -33,7 +33,16 @@
     <p>Open, drop, or paste a photo.</p>
     <p class="note">Everything stays in this browser. Nothing is uploaded to a server.</p>
   </div>
-  <canvas id="view" hidden></canvas>
+  <div id="canvas-wrap" hidden>
+    <canvas id="view" hidden></canvas>
+    <canvas id="overlay" aria-label="Canvas handles"></canvas>
+  </div>
+  <div id="tools" class="tools" role="toolbar" aria-label="Canvas tools" hidden>
+    <button id="tool-select" aria-pressed="true" title="Select (V)">Select</button>
+    <button id="tool-move" aria-pressed="false" title="Move, scale and rotate layers (M)">Move</button>
+    <button id="tool-crop" aria-pressed="false" title="Crop on the canvas (C)">Crop</button>
+    <button id="tool-straighten" aria-pressed="false" title="Drag along a horizon to straighten (S)">Straighten</button>
+  </div>
 </main>
 <section id="sheet" aria-label="Edit tools">
   <div class="hist-wrap">
@@ -257,20 +266,90 @@
 <input type="file" id="file-input" accept="image/*,.heic,.heif" hidden>
 <input type="file" id="add-input" accept="image/*,.heic,.heif" hidden>
 <dialog id="help" aria-labelledby="help-title">
-  <h2 id="help-title">Keyboard shortcuts</h2>
-  <dl class="keys">
-    <dt>Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z</dt><dd>Undo, redo</dd>
-    <dt>Ctrl/Cmd+S</dt><dd>Save project</dd>
-    <dt>Ctrl/Cmd+E</dt><dd>Export PNG</dd>
-    <dt>Ctrl/Cmd+A</dt><dd>Select all layers</dd>
-    <dt>Ctrl/Cmd+D</dt><dd>Duplicate selected layers</dd>
-    <dt>Delete, Backspace</dt><dd>Delete selected layers</dd>
-    <dt>Ctrl/Cmd-click, Shift-click</dt><dd>Add to selection, select a range</dd>
-    <dt>\</dt><dd>Toggle before and after</dd>
-    <dt>J</dt><dd>Toggle clipping warning</dd>
-    <dt>[ and ]</dt><dd>Mask brush smaller and larger</dd>
-  </dl>
-  <button id="help-close" class="primary">Close</button>
+  <div class="help-head">
+    <h2 id="help-title">Help &amp; shortcuts</h2>
+    <button id="help-close" class="primary">Close</button>
+  </div>
+  <div class="help-body">
+    <section>
+      <h3>Getting started</h3>
+      <ul>
+        <li>Open a photo with Open, drag it onto the page, or paste it. Dropping or pasting while a photo is open adds it as a layer.</li>
+        <li>Your original is never changed. Every edit is a layer or a step you can undo.</li>
+        <li>Projects save to this browser about every three seconds. Save (Ctrl/Cmd+S) saves now.</li>
+        <li>Export PNG or JPEG at full resolution. Ctrl/Cmd+E exports PNG.</li>
+        <li>Nothing leaves your device. Everything stays in this browser.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Canvas tools</h3>
+      <p>Use the toolbar on the photo, or the keys in brackets.</p>
+      <ul>
+        <li><strong>Select</strong> (V): the default. Click a layer in the Layers tab to choose it.</li>
+        <li><strong>Move</strong> (M): drag an image layer to move it. Drag a corner to scale it, or the handle above it to rotate. Hold Shift while rotating to snap to 15°. Drag near the centre to snap to it.</li>
+        <li><strong>Crop</strong> (C): drag the corners or edges, or drag inside to move the crop. Aspect presets hold their ratio.</li>
+        <li><strong>Straighten</strong> (S): drag along a horizon. The slope sets the angle, up to ±45°.</li>
+        <li><strong>Clipping</strong> (J): shows blown highlights in red and crushed shadows in blue.</li>
+        <li><strong>Before</strong>: hold the Before button, or press \ to toggle the original.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Adjusting the picture</h3>
+      <ul>
+        <li><strong>Tune</strong>: brightness, contrast, saturation, warmth, highlights and shadows. Sliders change every selected layer. Double-click a slider to reset it.</li>
+        <li><strong>Auto tone</strong> sets brightness and contrast from the image. Copy tune and Paste tune move settings between layers.</li>
+        <li><strong>Crop &amp; frame</strong>: rotate, flip, straighten, correct perspective, set an aspect ratio, expand the canvas with a solid fill, and add a solid or Polaroid frame.</li>
+        <li><strong>Effects</strong>: Vignette, Curves (five points), Details sharpen, Selective (set the radius and feather, then tap the photo), Looks (presets that replace the layer's tune), and Retouch clone (set a source, then paint with the clone brush).</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Layers</h3>
+      <ul>
+        <li>Add an image, an adjustment layer, or a retouch layer.</li>
+        <li>Select several layers with Ctrl/Cmd-click, or a range with Shift-click. Ctrl+A selects all. Edits apply to the whole selection.</li>
+        <li>Group selected layers. Clicking one member selects the group.</li>
+        <li>Each layer has a name, visibility, lock, opacity, blend mode, and position and scale for image layers.</li>
+        <li><strong>Layer style</strong>: drop shadow, outer glow, stroke and colour overlay. Copy style and Paste style move them between layers.</li>
+        <li><strong>Mask</strong>: add a mask, or use a linear or radial gradient. Edit mask paints (reveal) or erases (hide). Invert flips it.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Keyboard shortcuts</h3>
+      <dl class="keys">
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Undo</dd>
+        <dt>Shift + <kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Redo</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>S</kbd></dt><dd>Save project</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>E</kbd></dt><dd>Export PNG</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>A</kbd></dt><dd>Select all layers</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>D</kbd></dt><dd>Duplicate selected layers</dd>
+        <dt><kbd>Delete</kbd> or <kbd>Backspace</kbd></dt><dd>Delete selected layers</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd>-click</dt><dd>Add a layer to the selection, or remove it</dd>
+        <dt><kbd>Shift</kbd>-click</dt><dd>Select a range of layers</dd>
+        <dt><kbd>V</kbd> <kbd>M</kbd> <kbd>C</kbd> <kbd>S</kbd></dt><dd>Select, Move, Crop, Straighten tools</dd>
+        <dt><kbd>J</kbd></dt><dd>Toggle the clipping warning</dd>
+        <dt><kbd>\</kbd></dt><dd>Toggle before and after</dd>
+        <dt><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></dt><dd>Nudge the layer one pixel (Move tool)</dd>
+        <dt>Shift + arrow</dt><dd>Nudge ten pixels (Move tool)</dd>
+        <dt><kbd>[</kbd> and <kbd>]</kbd></dt><dd>Smaller and larger mask brush (mask edit)</dd>
+        <dt><kbd>?</kbd></dt><dd>Open this help</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h3>Tips</h3>
+      <ul>
+        <li>For Selective, set the radius and feather before you tap the photo.</li>
+        <li>Clone copies what is beneath the retouch layer. Set the source first, then turn on the clone brush.</li>
+        <li>Looks replace the layer's tune values. Auto tone and sliders can refine them afterwards.</li>
+        <li>Safari shows shadows and glows without blur in older versions. Newer versions match Chrome.</li>
+        <li>HEIC photos don't open in most desktop browsers. Convert them to JPEG or PNG first.</li>
+      </ul>
+    </section>
+  </div>
 </dialog>
 <script src="app.js"></script>
 </body>

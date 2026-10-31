@@ -81,13 +81,15 @@ with sync_playwright() as p:
         # help dialog
         page.keyboard.press('?')
         check(f'{name}: ? opens the shortcut help', page.evaluate("document.getElementById('help').open"))
+        check(f'{name}: help has the guide sections', page.evaluate("document.querySelectorAll('#help .help-body h3').length") >= 6)
+        check(f'{name}: help lists the undo shortcut', page.evaluate("document.querySelector('#help .keys').innerText.includes('Undo')"))
         page.click('#help-close')
         check(f'{name}: help closes', not page.evaluate("document.getElementById('help').open"))
 
         # Delete and Ctrl+D on layers
         page.set_input_files('#add-input', RED)
         page.wait_for_function("document.querySelectorAll('#layer-list .lrow').length === 2")
-        page.locator('#view').click()
+        page.locator('#overlay').click()
         page.keyboard.press('Delete')
         check(f'{name}: Delete removes the selected layer', page.evaluate("state.layers.length") == 1, page.evaluate("state.layers.length"))
         page.keyboard.press('Control+d')

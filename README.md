@@ -2,10 +2,93 @@
 
 A browser photo editor. Everything runs locally: photos and projects are stored in this browser's IndexedDB, and nothing is uploaded.
 
+## User guide
+
+### Quick start
+1. Open a photo: click **Open**, drag it onto the page, or paste it (Ctrl/Cmd+V).
+2. Adjust the photo in the inspector on the right (phones: the panel at the bottom). Start with the **Tune** tab.
+3. Use the tools on the photo to move, crop, and straighten.
+4. Click **Save** (Ctrl/Cmd+S) to save now. Projects also save about every three seconds.
+5. Click **PNG** or **JPEG** to export at full resolution.
+
+Your original photo is never changed. Every edit is a layer or an undoable step. Nothing leaves your device.
+
+### The interface
+- **Header**: Open, undo and redo, 100% zoom, Before (hold to see the original), saved projects, Save, JPEG quality, Export, Clipping, help (?), and Hide panel.
+- **Histogram**: the luminance of the current picture. It updates as you edit.
+- **Tabs**: Tune, Crop & frame, Layers, History, Effects.
+- **Toolbar on the photo**: Select, Move, Crop, Straighten.
+- **Status line** (bottom): tells you what just happened.
+
+### Canvas tools
+| Tool | Key | What it does |
+| --- | --- | --- |
+| Select | V | Default. Click a layer in the Layers tab to choose it. |
+| Move | M | Drag an image layer to move it. Drag a corner to scale it, or the handle above it to rotate. Shift snaps rotation to 15°. Drag near the centre to snap to it. Arrow keys nudge one pixel (Shift for ten). |
+| Crop | C | Drag the corners or edges, or drag inside to move the crop. The grid and size show while you work. Aspect presets hold their ratio. |
+| Straighten | S | Drag along something that should be level, such as a horizon. The slope sets the angle, up to ±45°. |
+
+Clipping (J) shows blown highlights in red and crushed shadows in blue. Hold **Before**, or press \ to see the original.
+
+### Adjusting the picture
+- **Tune**: brightness, contrast, saturation, warmth, highlights, and shadows. Sliders change every selected layer. Double-click a slider to reset it.
+- **Auto tone** sets brightness and contrast from the picture. **Copy tune** and **Paste tune** move settings between layers.
+- **Crop & frame**: rotate, flip, straighten, correct perspective, set an aspect ratio, expand the canvas with a solid fill, and add a solid or Polaroid frame.
+- **Effects**:
+  - Vignette darkens the edges.
+  - Curves sets five points, from shadows to highlights.
+  - Details sharpen sharpens detail. Flat areas stay the same.
+  - Selective adjusts only the area you tap. Set the radius and feather first.
+  - Looks are presets (Warm, Cool, Matte, Black & white, Vivid). A look replaces the layer's tune values.
+  - Retouch clone copies one part of the picture onto another. Set the source, then paint with the clone brush.
+
+### Layers
+- Add an image, an adjustment layer, or a retouch layer.
+- Select layers with a click. Ctrl/Cmd-click adds or removes one, Shift-click selects a range, and Ctrl/Cmd+A selects all. Opacity, blend, visibility, lock, tune, duplicate, and delete apply to the whole selection.
+- **Group** links the selected layers. Clicking any member selects the group.
+- Each layer has a name, visibility, lock, opacity, and blend mode (14 modes). Image layers also have position, scale, and rotation.
+- **Layer style**: drop shadow, outer glow, stroke, and colour overlay. Copy style and Paste style move them between layers.
+- **Mask**: add a mask, or use a linear or radial gradient. Edit mask paints (reveals) or erases (hides). Invert flips the mask.
+- The list shows badges for masks, styles, groups, hidden layers, and locked layers.
+
+### Keyboard shortcuts
+| Action | Keys |
+| --- | --- |
+| Undo / Redo | Ctrl/Cmd+Z / Shift+Ctrl/Cmd+Z |
+| Save project | Ctrl/Cmd+S |
+| Export PNG | Ctrl/Cmd+E |
+| Select all layers | Ctrl/Cmd+A |
+| Duplicate selected layers | Ctrl/Cmd+D |
+| Delete selected layers | Delete or Backspace |
+| Add or remove a layer from the selection | Ctrl/Cmd-click |
+| Select a range of layers | Shift-click |
+| Select / Move / Crop / Straighten | V / M / C / S |
+| Clipping warning | J |
+| Before and after | \ |
+| Nudge the layer (Move tool) | Arrow keys (Shift for ten pixels) |
+| Mask brush smaller / larger | [ / ] |
+| Help | ? |
+
+### Tips and troubleshooting
+- Set Selective's radius and feather before you tap the photo.
+- Clone copies from what is beneath the retouch layer, so set the source first.
+- Looks replace the layer's tune values. You can adjust them afterwards.
+- Shadows and glows need canvas blur. Older Safari versions show them without blur.
+- HEIC photos don't open in most desktop browsers. Convert them to JPEG or PNG first.
+- If the panel is in the way, use **Hide panel** in the header.
+- The app works offline after the first load. Install it from the browser menu to use it like an app.
+
 ## Run
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
 ## Included
+- On-canvas tools (the toolbar on the photo, or V, M, C, S):
+  - Select (V): the default. Mask, clone and tap-to-place tools still work.
+  - Move (M): drag an image layer to move it, drag a corner to scale from its centre, drag the handle above it to rotate. Hold Shift while rotating to snap to 15°. Drag near the document centre to snap to it (a magenta guide shows). Arrow keys nudge one pixel, or 10 with Shift. Each drag is one undo step.
+  - Crop (C): drag the corners and edges, or drag inside to move the crop. The rule-of-thirds grid and the crop size show while you work. Aspect presets hold their ratio. Edges follow the pointer exactly.
+  - Straighten (S): drag along a horizon. Its slope becomes the angle (limited to ±45°), and the angle shows on the canvas.
+  - The move, crop and straighten tools show the photo without expand and frame, so the handles line up with the image. The export still includes them.
+- Layers can be rotated. Rotation is about each layer's centre, and styles and masks follow it.
 - Auto tone (Tune tab): measures the unedited preview and sets brightness and contrast on the selected layers from the median and spread. Undoable.
 - Copy tune and paste tune: move the Tune settings between layers.
 - Clipping warning (J, or the Clipping button): blown highlights (any channel 254+) show red, and crushed shadows (all channels 1 or less) show blue. The overlay is for viewing only; it doesn't change the image or the histogram.
@@ -65,14 +148,12 @@ Serve the folder over HTTP (the service worker needs http://localhost or HTTPS):
 ## Not yet built
 - Text and shape layers (rectangle, ellipse, line, polygon). Rasterise.
 - Groups, drag-to-reorder, merge down.
-- On-canvas move, scale, and rotate handles with snapping. Position is set with numeric sliders.
 - Mask edit is in document space: geometry (crop, frame, expand) is hidden while editing masks.
 - Custom gradient angle and centre. Gradients are top-to-bottom and centre-out.
 - Healing (lighting and texture matching). Clone is built; Healing is not.
 - Double Exposure, Lens Blur, Text, Expand's generated fill, the Details noise reduction, and the filters beyond Black & white.
-- On-canvas perspective handles. Perspective is set with sliders.
+- On-canvas perspective handles. Perspective is set with sliders (this is the one canvas control still missing).
 - Clone source marker on the canvas.
-- On-canvas crop handles. Crop is set with numeric sliders.
 - Worker or OffscreenCanvas processing. Everything runs on the main thread.
 - Tiled export above the GPU texture limit. The app warns above about 16 MP and does not tile.
 - Batch apply, pinch and rotate gestures, and further keyboard shortcuts.
@@ -104,6 +185,7 @@ Needs WebGL 2 and `createImageBitmap` with `imageOrientation`. Targets current C
 - The button sweep dispatches clicks inside the page. It checks handlers, not Playwright's hit-testing.
 - Extras tests (auto tone, tune copy and paste, clipping, help dialog, Delete and Ctrl+D): `python3 tests/extras-tests.py`.
 - Layer tests (selection, batch edits, groups, styles): `python3 tests/layers-tests.py`.
+- Canvas tests (handles, crop, straighten, tool keys, nudging): `python3 tests/canvas-tests.py`.
 - Pixel tests for Straighten, Perspective, and Clone: `python3 tests/tools-tests.py`.
 - Not verified: real GPU drivers, iOS Safari limits, HEIC decoding, PWA installation on a device, and blend-mode output against a reference other than the browser's own compositor.
 

@@ -27,6 +27,7 @@ const state = {
   doc: null, docName: '', assets: new Map(), masks: new Map(), layers: [], geo: defaultGeo(), selectedId: null,
   history: [], hIndex: 0, projectId: null, dirty: false, gl: null, glCanvas: null,
   maskMode: false, pickMode: false, cloneMode: false, cloneSrcPending: false, cloneSrc: null, live: null,
+  tool: 'select', guides: { x: false, y: false }, horizonLine: null,
   selection: [], styleClip: null, tuneClip: null, clip: false, tuneCache: new Map(), stats: { glDraws: 0, cacheHits: 0 }, actual: false, showOrig: false, histLast: null
 };
 const $ = id => document.getElementById(id);
@@ -379,7 +380,10 @@ function composite(full, raw = false, upTo = null) {
       const src = tunedCached(L, full ? a.full : a.work, raw ? null : L.params, full);
       lc = canvasOf(D, Hd);
       const dw = L.scale * D, dh = dw * src.height / src.width;
-      lc.getContext('2d').drawImage(src, L.x * D, L.y * Hd, dw, dh);
+      const lg = lc.getContext('2d');
+      lg.translate(L.x * D + dw / 2, L.y * Hd + dh / 2);
+      lg.rotate((L.rot || 0) * Math.PI / 180);
+      lg.drawImage(src, -dw / 2, -dh / 2, dw, dh);
     } else if (L.type === 'adjust') {
       if (raw) continue;
       const adj = adjustPipeline(acc, L);
@@ -410,7 +414,7 @@ function composite(full, raw = false, upTo = null) {
 }
 
 // ---------- Geometry: rotate/flip, crop, expand, frame (applies to the whole composite) ----------
-function compose(src, geo) {
+function compose(src, geo, baseOnly = false) {
   const [W, H] = dimsFor(geo.rot, src.width, src.height);
   const R = canvasOf(W, H), r = R.getContext('2d');
   r.translate(W / 2, H / 2);
@@ -420,6 +424,7 @@ function compose(src, geo) {
   let base = R;
   if (geo.angle) base = straightenCanvas(base, geo.angle);
   if (geo.persp && hasPersp(geo.persp)) base = perspectiveCanvas(base, geo.persp);
+  if (baseOnly) return base;
 
   const c = geo.crop;
   const cx = Math.round(c.x * W), cy = Math.round(c.y * H);
@@ -518,13 +523,16 @@ function renderNow(raw = false) {
   if (!state.doc) return;
   raw = raw || state.showOrig;
   // In mask edit mode the view shows document space so brush coordinates map directly.
-  const useDefault = raw || state.maskMode || state.pickMode || state.cloneMode || state.cloneSrcPending;
-  const out = compose(composite(false, raw), useDefault ? defaultGeo() : state.geo);
+  const useDefault = raw || state.maskMode || state.pickMode || state.cloneMode || state.cloneSrcPending || state.tool === 'move';
+  const baseOnly = !useDefault && (state.tool === 'crop' || state.tool === 'straighten');
+  const out = compose(composite(false, raw), useDefault ? defaultGeo() : state.geo, baseOnly);
   const v = $('view');
   v.width = out.width; v.height = out.height;
   v.getContext('2d').drawImage(out, 0, 0);
   updateHistogram();
   if (state.clip) clipOverlay(v);
+  layoutCanvas();
+  drawOverlay();
 }
 
 // Continuous input (slider drags, brush moves) is coalesced to one render per animation frame.
@@ -985,7 +993,241 @@ function heicMsg(file) {
     ? 'HEIC/HEIF: most desktop browsers cannot decode this. Convert it to JPEG or PNG first.'
     : 'Could not decode this image.');
 }
-function showCanvas() { $('view').hidden = false; $('empty').hidden = true; }
+function showCanvas() {
+  $('view').hidden = false; $('canvas-wrap').hidden = false; $('tools').hidden = false; $('empty').hidden = true;
+}
+
+// ---------- On-canvas handles: layer move, scale and rotate; crop; straighten ----------
+let xf = null;               // the drag in progress, if any
+const CROP_HANDLES = { nw: [0, 0], n: [0.5, 0], ne: [1, 0], e: [1, 0.5], se: [1, 1], s: [0.5, 1], sw: [0, 1], w: [0, 0.5] };
+// Screen pixels to document pixels on the canvas overlay.
+function kScreen() {
+  const r = $('canvas-wrap').getBoundingClientRect();
+  return r.width ? $('overlay').width / r.width : 1;
+}
+// Sizes the canvas wrapper to fit the stage (or 100% zoom), keeping the view and overlay in step.
+function layoutCanvas() {
+  const v = $('view'), ov = $('overlay'), wrap = $('canvas-wrap'), st = $('stage');
+  if (!state.doc || !v.width) return;
+  const s = state.actual ? 1 : Math.min((st.clientWidth - 40) / v.width, (st.clientHeight - 40) / v.height, 8);
+  wrap.style.width = Math.max(1, Math.round(v.width * s)) + 'px';
+  wrap.style.height = Math.max(1, Math.round(v.height * s)) + 'px';
+  if (ov.width !== v.width) ov.width = v.width;
+  if (ov.height !== v.height) ov.height = v.height;
+}
+function layerBox(L) {
+  const a = state.assets.get(L.asset), D = state.doc.w, Hd = state.doc.h;
+  const dw = L.scale * D, dh = dw * a.work.height / a.work.width;
+  return { cx: L.x * D + dw / 2, cy: L.y * Hd + dh / 2, dw, dh, rot: (L.rot || 0) * Math.PI / 180 };
+}
+function toWorld(b, lx, ly) {
+  const c = Math.cos(b.rot), s = Math.sin(b.rot);
+  return { x: b.cx + lx * c - ly * s, y: b.cy + lx * s + ly * c };
+}
+function toLocal(b, p) {
+  const c = Math.cos(-b.rot), s = Math.sin(-b.rot), dx = p.x - b.cx, dy = p.y - b.cy;
+  return { x: dx * c - dy * s, y: dx * s + dy * c };
+}
+// Handle positions for the selected image layer (document pixels). Used by the overlay and by the tests.
+function layerHandles() {
+  const L = sel();
+  if (!L || L.type !== 'image' || !state.doc) return null;
+  const b = layerBox(L);
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => toWorld(b, sx * b.dw / 2, sy * b.dh / 2));
+  const rot = toWorld(b, 0, -b.dh / 2 - 28 * kScreen());
+  return { corners, rot, box: b };
+}
+function hitLayer(b, p, hs) {
+  const rot = toWorld(b, 0, -b.dh / 2 - 28 * kScreen());
+  if (Math.hypot(p.x - rot.x, p.y - rot.y) <= hs * 1.3) return 'rotate';
+  const q = toLocal(b, p);
+  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    if (Math.abs(q.x - sx * b.dw / 2) <= hs && Math.abs(q.y - sy * b.dh / 2) <= hs) return 'scale';
+  }
+  if (Math.abs(q.x) <= b.dw / 2 && Math.abs(q.y) <= b.dh / 2) return 'move';
+  return null;
+}
+function cropHit(W, H, p, hs) {
+  const c = state.geo.crop, x = c.x * W, y = c.y * H, w = c.w * W, h = c.h * H;
+  for (const [name, [fx, fy]] of Object.entries(CROP_HANDLES)) {
+    if (Math.abs(p.x - (x + w * fx)) <= hs && Math.abs(p.y - (y + h * fy)) <= hs) return name;
+  }
+  return p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h ? 'body' : null;
+}
+function toolDown(e) {
+  if (!['move', 'crop', 'straighten'].includes(state.tool)) return false;
+  const p = docPoint(e), hs = 9 * kScreen();
+  if (state.tool === 'move') {
+    const L = sel();
+    if (!L || L.type !== 'image' || L.locked) { say('Select an unlocked image layer to move it.'); return true; }
+    const b = layerBox(L), mode = hitLayer(b, p, hs);
+    if (!mode) return true;
+    xf = { kind: 'layer', mode, layerId: L.id, start: p, box: b, startAng: Math.atan2(p.y - b.cy, p.x - b.cx),
+      startDist: Math.max(1, Math.hypot(p.x - b.cx, p.y - b.cy)), orig: { x: L.x, y: L.y, scale: L.scale, rot: L.rot || 0 } };
+  } else if (state.tool === 'crop') {
+    const W = $('view').width, H = $('view').height, mode = cropHit(W, H, p, hs);
+    if (!mode) return true;
+    xf = { kind: 'crop', mode, start: p, W, H, orig: { ...state.geo.crop } };
+  } else {
+    xf = { kind: 'horizon', start: p };
+    state.horizonLine = { a: p, b: p };
+  }
+  $('overlay').setPointerCapture(e.pointerId);
+  return true;
+}
+function aspectOf(g, W, H) {
+  return g.aspect === 'original' ? W / H : ASPECTS[g.aspect];
+}
+function toolMove(e) {
+  if (!xf) return false;
+  const p = docPoint(e), D = state.doc.w, Hd = state.doc.h;
+  if (xf.kind === 'layer') {
+    const L = state.layers.find(x => x.id === xf.layerId);
+    if (!L) return true;
+    const b0 = xf.box, aspect = state.assets.get(L.asset).work.height / state.assets.get(L.asset).work.width;
+    if (xf.mode === 'move') {
+      let cx = b0.cx + (p.x - xf.start.x), cy = b0.cy + (p.y - xf.start.y);
+      state.guides = { x: Math.abs(cx - D / 2) < D * 0.015, y: Math.abs(cy - Hd / 2) < Hd * 0.015 };
+      if (state.guides.x) cx = D / 2;
+      if (state.guides.y) cy = Hd / 2;
+      L.x = (cx - b0.dw / 2) / D;
+      L.y = (cy - b0.dh / 2) / Hd;
+    } else if (xf.mode === 'rotate') {
+      let deg = xf.orig.rot + (Math.atan2(p.y - b0.cy, p.x - b0.cx) - xf.startAng) * 180 / Math.PI;
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      L.rot = ((deg + 180) % 360 + 360) % 360 - 180;
+    } else {
+      const scale = Math.max(0.02, xf.orig.scale * Math.hypot(p.x - b0.cx, p.y - b0.cy) / xf.startDist);
+      const dw = scale * D, dh = dw * aspect;
+      L.scale = scale;
+      L.x = (b0.cx - dw / 2) / D;
+      L.y = (b0.cy - dh / 2) / Hd;
+    }
+    renderSoon();
+    return true;
+  }
+  if (xf.kind === 'crop') {
+    const dx = (p.x - xf.start.x) / xf.W, dy = (p.y - xf.start.y) / xf.H, o = xf.orig, c = state.geo.crop;
+    if (xf.mode === 'body') {
+      c.x = Math.min(Math.max(o.x + dx, 0), 1 - o.w);
+      c.y = Math.min(Math.max(o.y + dy, 0), 1 - o.h);
+    } else {
+      let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+      const m = xf.mode;
+      // Edges follow the pointer exactly, so the crop lands where you drop the handle.
+      if (m.includes('w')) x0 = Math.min(Math.max(p.x / xf.W, 0), x1 - 0.05);
+      if (m.includes('e')) x1 = Math.max(Math.min(p.x / xf.W, 1), x0 + 0.05);
+      if (m.includes('n')) y0 = Math.min(Math.max(p.y / xf.H, 0), y1 - 0.05);
+      if (m.includes('s')) y1 = Math.max(Math.min(p.y / xf.H, 1), y0 + 0.05);
+      c.x = x0; c.y = y0; c.w = x1 - x0; c.h = y1 - y0;
+      const r = aspectOf(state.geo, xf.W, xf.H);
+      if (r) {
+        c.h = (c.w * xf.W / r) / xf.H;
+        if (m.includes('n')) c.y = Math.max(0, y1 - c.h);
+        c.h = Math.min(c.h, 1 - c.y);
+      }
+    }
+    renderSoon();
+    return true;
+  }
+  // straighten: the horizon is the drag line; its slope becomes the angle
+  xf.end = p;
+  state.horizonLine = { a: xf.start, b: p };
+  const dx = Math.abs(p.x - xf.start.x), dy = p.y - xf.start.y;
+  if (Math.hypot(dx, dy) > 4) {
+    state.geo.angle = Math.max(-45, Math.min(45, Math.round(-Math.atan2(dy, Math.max(dx, 1)) * 1800 / Math.PI) / 10));
+  }
+  renderSoon();
+  return true;
+}
+function toolUp() {
+  if (!xf) return false;
+  const kind = xf.kind;
+  xf = null;
+  state.guides = { x: false, y: false };
+  state.horizonLine = null;
+  syncUI(); render();
+  commit({ layer: 'Transform layer', crop: 'Crop', horizon: 'Straighten' }[kind]);
+  return true;
+}
+function setTool(name) {
+  state.tool = name;
+  state.maskMode = false; state.pickMode = false; state.cloneMode = false; state.cloneSrcPending = false;
+  ['select', 'move', 'crop', 'straighten'].forEach(t => $('tool-' + t).setAttribute('aria-pressed', t === name));
+  $('canvas-wrap').className = 'tool-' + name;
+  syncUI(); render();
+}
+
+function drawCropOverlay(g, W, H, k) {
+  const c = state.geo.crop, x = c.x * W, y = c.y * H, w = c.w * W, h = c.h * H;
+  g.fillStyle = 'rgba(8, 9, 12, .6)';
+  g.fillRect(0, 0, W, y); g.fillRect(0, y + h, W, H - y - h);
+  g.fillRect(0, y, x, h); g.fillRect(x + w, y, W - x - w, h);
+  g.strokeStyle = '#fff'; g.lineWidth = k;
+  g.globalAlpha = 0.4; g.beginPath();
+  for (let i = 1; i < 3; i++) {
+    g.moveTo(x + w * i / 3, y); g.lineTo(x + w * i / 3, y + h);
+    g.moveTo(x, y + h * i / 3); g.lineTo(x + w, y + h * i / 3);
+  }
+  g.stroke(); g.globalAlpha = 1;
+  g.strokeRect(x, y, w, h);
+  for (const [fx, fy] of Object.values(CROP_HANDLES)) drawHandle(g, x + w * fx, y + h * fy, k);
+  pill(g, `${Math.round(w)} × ${Math.round(h)} px`, x + 6 * k, y + 6 * k, k);
+}
+// A small dark label with a readable text colour, drawn over the photo.
+function pill(g, text, x, y, k) {
+  g.font = `${12 * k}px system-ui, sans-serif`;
+  const w = g.measureText(text).width + 12 * k, h = 20 * k;
+  g.fillStyle = 'rgba(11, 12, 16, .82)';
+  g.fillRect(x, y, w, h);
+  g.fillStyle = '#eef0f5';
+  g.fillText(text, x + 6 * k, y + 14 * k);
+}
+function drawHandle(g, x, y, k) {
+  const s = 8 * k;
+  g.fillStyle = '#fff'; g.strokeStyle = '#0b0c10'; g.lineWidth = k;
+  g.fillRect(x - s / 2, y - s / 2, s, s);
+  g.strokeRect(x - s / 2, y - s / 2, s, s);
+}
+function drawStraightenOverlay(g, W, H, k) {
+  g.strokeStyle = 'rgba(255, 255, 255, .3)'; g.lineWidth = k; g.beginPath();
+  for (let i = 1; i < 3; i++) { g.moveTo(W * i / 3, 0); g.lineTo(W * i / 3, H); g.moveTo(0, H * i / 3); g.lineTo(W, H * i / 3); }
+  g.stroke();
+  const hl = state.horizonLine;
+  g.font = `${13 * k}px system-ui, sans-serif`;
+  if (!hl) { g.fillStyle = '#eef0f5'; g.fillText('Drag along a horizon to straighten', 10 * k, 22 * k); return; }
+  g.strokeStyle = '#8fb0ff'; g.lineWidth = 2 * k; g.beginPath(); g.moveTo(hl.a.x, hl.a.y); g.lineTo(hl.b.x, hl.b.y); g.stroke();
+  drawHandle(g, hl.a.x, hl.a.y, k); drawHandle(g, hl.b.x, hl.b.y, k);
+  g.fillStyle = '#eef0f5';
+  g.fillText(`${state.geo.angle.toFixed(1)}°`, hl.b.x + 10 * k, hl.b.y - 10 * k);
+}
+function drawLayerOverlay(g, W, H, k) {
+  const L = sel(), D = state.doc.w, Hd = state.doc.h;
+  if (state.guides.x) { g.strokeStyle = '#ff7ad9'; g.lineWidth = k; g.beginPath(); g.moveTo(D / 2, 0); g.lineTo(D / 2, H); g.stroke(); }
+  if (state.guides.y) { g.strokeStyle = '#ff7ad9'; g.lineWidth = k; g.beginPath(); g.moveTo(0, Hd / 2); g.lineTo(W, Hd / 2); g.stroke(); }
+  const hd = layerHandles();
+  if (!hd) return;
+  const b = hd.box, pts = hd.corners;
+  g.strokeStyle = '#8fb0ff'; g.lineWidth = k; g.setLineDash([6 * k, 4 * k]);
+  g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); g.stroke();
+  g.setLineDash([]);
+  const top = toWorld(b, 0, -b.dh / 2);
+  g.beginPath(); g.moveTo(top.x, top.y); g.lineTo(hd.rot.x, hd.rot.y); g.stroke();
+  pts.forEach(p => drawHandle(g, p.x, p.y, k));
+  g.fillStyle = '#8fb0ff'; g.beginPath(); g.arc(hd.rot.x, hd.rot.y, 4.5 * k, 0, Math.PI * 2); g.fill();
+  pill(g, `${Math.round(L.x * 100)}%, ${Math.round(L.y * 100)}%  ·  ${Math.round(L.scale * 100)}%  ·  ${Math.round(L.rot || 0)}°`,
+    pts[0].x, pts[0].y - 26 * k, k);
+}
+function drawOverlay() {
+  const ov = $('overlay'), g = ov.getContext('2d');
+  g.clearRect(0, 0, ov.width, ov.height);
+  if (!state.doc || $('canvas-wrap').hidden) return;
+  const k = kScreen(), W = ov.width, H = ov.height;
+  if (state.tool === 'crop') drawCropOverlay(g, W, H, k);
+  else if (state.tool === 'straighten') drawStraightenOverlay(g, W, H, k);
+  else if (state.tool === 'move') drawLayerOverlay(g, W, H, k);
+}
+
 
 async function openFile(file) {
   let a;
@@ -1213,8 +1455,9 @@ $('mask-linear').onclick = () => gradientMask('linear');
 $('mask-radial').onclick = () => gradientMask('radial');
 $('mask-edit').onclick = () => { state.maskMode = !state.maskMode; syncUI(); render(); };
 
-const view = $('view');
+const view = $('overlay');
 view.addEventListener('pointerdown', e => {
+  if (toolDown(e)) return;
   if (state.pickMode) { placeSelective(docPoint(e)); return; }
   if (state.cloneSrcPending) {
     state.cloneSrc = docPoint(e);
@@ -1252,13 +1495,14 @@ view.addEventListener('pointerdown', e => {
   render();
 });
 view.addEventListener('pointermove', e => {
+  if (toolMove(e)) return;
   if (!stroke) return;
   const pt = docPoint(e);
   strokeTo(pt.x, pt.y);
   renderSoon();
 });
-view.addEventListener('pointerup', finishStroke);
-view.addEventListener('pointercancel', finishStroke);
+view.addEventListener('pointerup', e => { if (!toolUp()) finishStroke(); });
+view.addEventListener('pointercancel', e => { if (!toolUp()) finishStroke(); });
 
 for (const id of Object.keys(FX_CONTROLS)) {
   const el = $(id);
@@ -1314,6 +1558,8 @@ $('fx-clear').onclick = () => {
   afterChange('Clear layer style');
 };
 $('tune-auto').onclick = autoTone;
+['select', 'move', 'crop', 'straighten'].forEach(t => { $('tool-' + t).onclick = () => setTool(t); });
+addEventListener('resize', () => { layoutCanvas(); drawOverlay(); });
 $('tune-copy').onclick = () => {
   const L = sel(); if (!L || !L.params) return;
   state.tuneClip = clone(L.params);
@@ -1378,6 +1624,22 @@ addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.metaKey)) {
     const inField = ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName);
     if (!inField && (e.key === 'j' || e.key === 'J')) { toggleClip(); return; }
+    if (!inField && 'vmcs'.includes(e.key.toLowerCase()) && e.key.length === 1) {
+      setTool({ v: 'select', m: 'move', c: 'crop', s: 'straighten' }[e.key.toLowerCase()]);
+      return;
+    }
+    if (!inField && state.tool === 'move' && e.key.startsWith('Arrow')) {
+      const L = sel();
+      if (L && L.type === 'image' && !L.locked) {
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        L.x += dx / state.doc.w; L.y += dy / state.doc.h;
+        e.preventDefault();
+        render(); commit('Nudge layer');
+      }
+      return;
+    }
     if (!inField && e.key === '?') { openHelp(); return; }
     if (!inField && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); delSel(); return; }
     if (state.maskMode && (e.key === '[' || e.key === ']')) {

@@ -114,7 +114,7 @@ with sync_playwright() as p:
         check(f'{name}: undo restores the deleted layer', page.evaluate("state.layers.length") == 2)
 
         # select all with Ctrl+A
-        page.locator('#view').click()
+        page.locator('#overlay').click()
         page.keyboard.press('Control+a')
         check(f'{name}: ctrl+A selects every layer', page.evaluate("selectedLayers().length") == page.evaluate("state.layers.length"))
 
