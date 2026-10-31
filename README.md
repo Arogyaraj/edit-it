@@ -6,6 +6,16 @@ A browser photo editor. Everything runs locally: photos and projects are stored 
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
 ## Included
+- Layout: a Lightroom-style workspace. The inspector sits on the right on desktop and becomes a bottom sheet on phones. "Hide panel" gives the photo the full width.
+- Histogram: luminance, computed in a Web Worker (hist-worker.js) from a 256px copy of the preview, and updated after every change.
+- Zoom: "100%" shows the photo at actual pixels, scrollable. "Fit" returns to fit-to-screen.
+- JPEG quality slider in the header.
+- Keyboard: `\` toggles before/after, Ctrl/Cmd+S saves, Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z undo and redo, Ctrl/Cmd+E exports PNG, `[` and `]` change the mask brush size.
+- Efficiency:
+  - Slider drags and brush strokes are coalesced to one render per animation frame. Discrete actions render immediately and cancel any queued frame.
+  - Each image layer's tuned output is cached until its own asset or tune values change. Editing other layers or masks does not repeat its GPU pass. The `state.stats` counters (glDraws, cacheHits) show this.
+  - Cache entries for deleted layers are released with the other memory.
+  - Saves run in order, so an older autosave can't overwrite a newer one.
 - Interface: a dark, quiet layout. Tabs are a segmented control, sliders and buttons are restyled, and the photo sits on a checkerboard so transparency shows. It collapses to the bottom with the Hide button and works from 360px phones up.
 - Open, drop, or paste a photo. Drop or paste adds a layer when a document is already open. EXIF orientation is applied.
 - Preview is capped at 2048px on the long side. Export composites the full-resolution layers.
@@ -54,7 +64,9 @@ Serve the folder over HTTP (the service worker needs http://localhost or HTTPS):
 - On-canvas crop handles. Crop is set with numeric sliders.
 - Worker or OffscreenCanvas processing. Everything runs on the main thread.
 - Tiled export above the GPU texture limit. The app warns above about 16 MP and does not tile.
-- Batch apply, pinch and rotate gestures, and most keyboard shortcuts (only undo, redo, export, and brush size are wired).
+- Batch apply, pinch and rotate gestures, and further keyboard shortcuts.
+- Worker or OffscreenCanvas processing for curves, sharpen, and tune. Only the histogram runs in a worker.
+- Measured frame timings. The efficiency work is verified by counters, not by benchmarks.
 - HEIC decoding. The app detects HEIC and asks you to convert it.
 - PIN lock.
 

@@ -26,7 +26,8 @@ const newId = p => p + Date.now().toString(36) + (idCounter++);
 const state = {
   doc: null, docName: '', assets: new Map(), masks: new Map(), layers: [], geo: defaultGeo(), selectedId: null,
   history: [], hIndex: 0, projectId: null, dirty: false, gl: null, glCanvas: null,
-  maskMode: false, pickMode: false, cloneMode: false, cloneSrcPending: false, cloneSrc: null, live: null
+  maskMode: false, pickMode: false, cloneMode: false, cloneSrcPending: false, cloneSrc: null, live: null,
+  tuneCache: new Map(), stats: { glDraws: 0, cacheHits: 0 }, actual: false, showOrig: false, histLast: null
 };
 const $ = id => document.getElementById(id);
 const say = msg => { $('status').textContent = msg; };
@@ -114,8 +115,21 @@ function tuned(src, p) {
   state.glCanvas.height = src.height;
   state.gl.setImage(src);
   state.gl.draw(p);
+  state.stats.glDraws++;
   const out = canvasOf(src.width, src.height);
   out.getContext('2d').drawImage(state.glCanvas, 0, 0);
+  return out;
+}
+
+// Caches each image layer's tuned output. Only the layer's own settings matter here, so editing another
+// layer or a mask does not repeat this layer's GPU pass.
+function tunedCached(L, src, p, full) {
+  if (!p || !state.gl || !SLIDERS.some(k => p[k])) return src;
+  const key = [L.asset, full ? 'f' : 'p', src.width, src.height, ...SLIDERS.map(k => p[k])].join(':');
+  const hit = state.tuneCache.get(L.id);
+  if (hit && hit.key === key) { state.stats.cacheHits++; return hit.canvas; }
+  const out = tuned(src, p);
+  state.tuneCache.set(L.id, { key, canvas: out });
   return out;
 }
 
@@ -312,7 +326,7 @@ function composite(full, raw = false, upTo = null) {
     if (L.type === 'image') {
       const a = state.assets.get(L.asset);
       if (!a) continue;
-      const src = tuned(full ? a.full : a.work, raw ? null : L.params);
+      const src = tunedCached(L, full ? a.full : a.work, raw ? null : L.params, full);
       lc = canvasOf(D, Hd);
       const dw = L.scale * D, dh = dw * src.height / src.width;
       lc.getContext('2d').drawImage(src, L.x * D, L.y * Hd, dw, dh);
@@ -449,14 +463,60 @@ const LOOKS = {
 };
 
 // ---------- Rendering and UI sync ----------
-function render(raw = false) {
+function renderNow(raw = false) {
   if (!state.doc) return;
+  raw = raw || state.showOrig;
   // In mask edit mode the view shows document space so brush coordinates map directly.
   const useDefault = raw || state.maskMode || state.pickMode || state.cloneMode || state.cloneSrcPending;
   const out = compose(composite(false, raw), useDefault ? defaultGeo() : state.geo);
   const v = $('view');
   v.width = out.width; v.height = out.height;
   v.getContext('2d').drawImage(out, 0, 0);
+  updateHistogram();
+}
+
+// Continuous input (slider drags, brush moves) is coalesced to one render per animation frame.
+let rafId = 0, rafRaw = false;
+function renderSoon(raw = false) {
+  rafRaw = raw;
+  if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; renderNow(rafRaw); });
+}
+// Discrete actions render immediately.
+function render(raw = false) {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  renderNow(raw);
+}
+
+// ---------- Histogram: computed in a worker from a small copy of the preview ----------
+let histWorker = null, histBusy = false, histSeq = 0, histRerun = false;
+try { histWorker = new Worker('hist-worker.js'); histWorker.onmessage = onHist; } catch (e) { histWorker = null; }
+function onHist(e) {
+  histBusy = false;
+  state.histLast = { pixels: e.data.pixels, bins: new Uint32Array(e.data.bins) };
+  drawHistogram(state.histLast.bins);
+  if (histRerun) { histRerun = false; updateHistogram(); }
+}
+function updateHistogram() {
+  if (!histWorker || !state.doc) return;
+  if (histBusy) { histRerun = true; return; }
+  const v = $('view'), w = Math.min(256, v.width), h = Math.max(1, Math.round(v.height * w / v.width));
+  const small = canvasOf(w, h), sc = small.getContext('2d');
+  sc.drawImage(v, 0, 0, w, h);
+  const buf = sc.getImageData(0, 0, w, h).data.buffer;
+  histBusy = true;
+  histWorker.postMessage({ buf, id: ++histSeq }, [buf]);
+}
+function drawHistogram(bins) {
+  const c = $('hist'), g = c.getContext('2d'), W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  const lum = bins.subarray(768, 1024);
+  let max = 1;
+  for (let i = 0; i < 256; i++) if (lum[i] > max) max = lum[i];
+  g.fillStyle = 'rgba(143, 176, 255, .6)';
+  for (let i = 0; i < 256; i++) {
+    const h = Math.sqrt(lum[i] / max) * H;
+    g.fillRect(i * W / 256, H - h, W / 256 + 0.5, h);
+  }
 }
 
 function syncUI() {
@@ -560,6 +620,7 @@ function setEdit(e) {
   render();
 }
 function commit(label = 'Edit') {
+  state.showOrig = false;
   state.history = state.history.slice(0, state.hIndex + 1);
   state.history.push({ ...snap(), label });
   if (state.history.length > MAX_HISTORY) state.history.shift();
@@ -576,6 +637,8 @@ function releaseUnused() {
   visit(state.layers);
   for (const k of [...state.assets.keys()]) if (!useA.has(k)) state.assets.delete(k);
   for (const k of [...state.masks.keys()]) if (!useM.has(k)) state.masks.delete(k);
+  const liveIds = new Set(state.layers.map(L => L.id));
+  for (const k of [...state.tuneCache.keys()]) if (!liveIds.has(k)) state.tuneCache.delete(k);
 }
 function afterChange(label = 'Edit') { syncUI(); render(); commit(label); }
 function undo() { if (state.hIndex > 0) { state.hIndex--; setEdit(state.history[state.hIndex]); state.dirty = true; updateUndo(); } }
@@ -817,7 +880,7 @@ async function exportImage(type) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     say(`Exported ${out.width}×${out.height} ${jpeg ? 'JPEG' : 'PNG'}.`);
-  }, jpeg ? 'image/jpeg' : 'image/png', 0.92);
+  }, jpeg ? 'image/jpeg' : 'image/png', +$('export-quality').value / 100);
 }
 
 // ---------- Projects in IndexedDB ----------
@@ -881,9 +944,9 @@ function buildSliders() {
     const el = row.querySelector('input');
     el.addEventListener('input', () => {
       const L = sel(); if (!L || L.locked) return;
-      L.params[k] = +el.value; $('v-' + k).textContent = el.value; render();
+      L.params[k] = +el.value; $('v-' + k).textContent = el.value; renderSoon();
     });
-    el.addEventListener('change', () => commit(LABEL[k]));
+    el.addEventListener('change', () => { commit(LABEL[k]); render(); });
     el.addEventListener('dblclick', () => resetParam(k));
     $('r-' + k).addEventListener('click', () => resetParam(k));
   });
@@ -929,7 +992,8 @@ function showTab(name) {
 ['tune', 'geo', 'layers', 'history', 'fx'].forEach(t => { $('tab-' + t).onclick = () => showTab(t); });
 $('sheet-toggle').onclick = () => {
   const closed = $('sheet').classList.toggle('closed');
-  $('sheet-toggle').textContent = closed ? 'Show' : 'Hide';
+  document.body.classList.toggle('panel-hidden', closed);
+  $('sheet-toggle').textContent = closed ? 'Show panel' : 'Hide panel';
   $('sheet-toggle').setAttribute('aria-expanded', !closed);
 };
 
@@ -1018,7 +1082,7 @@ view.addEventListener('pointermove', e => {
   if (!stroke) return;
   const pt = docPoint(e);
   strokeTo(pt.x, pt.y);
-  render();
+  renderSoon();
 });
 view.addEventListener('pointerup', finishStroke);
 view.addEventListener('pointercancel', finishStroke);
@@ -1041,6 +1105,12 @@ $('retouch-src').onclick = () => {
 $('retouch-paint').onclick = () => {
   state.cloneMode = !state.cloneMode; state.maskMode = false; state.pickMode = false; state.cloneSrcPending = false;
   syncUI(); render();
+};
+$('zoom-toggle').onclick = () => {
+  state.actual = !state.actual;
+  $('view').classList.toggle('actual', state.actual);
+  $('stage').classList.toggle('actual', state.actual);
+  $('zoom-toggle').textContent = state.actual ? 'Fit' : '100%';
 };
 $('btn-save').onclick = () => saveProject().catch(err => say('Save failed: ' + err.message));
 $('btn-load').onclick = async () => {
@@ -1077,6 +1147,12 @@ $('btn-export-png').onclick = () => exportImage('png');
 
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' && e.target.type === 'text') return;
+  if (e.key === '\\' && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    state.showOrig = !state.showOrig;
+    render(state.showOrig);
+    return;
+  }
   if (!(e.ctrlKey || e.metaKey)) {
     if (state.maskMode && (e.key === '[' || e.key === ']')) {
       const s = $('brush-size');
@@ -1088,6 +1164,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === 'e') { e.preventDefault(); exportImage('png'); }
+  else if (k === 's') { e.preventDefault(); saveProject().catch(err => say('Save failed: ' + err.message)); }
 });
 
 setInterval(() => {

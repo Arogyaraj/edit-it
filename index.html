@@ -13,6 +13,7 @@
 <header class="top">
   <div class="brand"><span class="logo"></span><strong>edit-it</strong></div>
   <button id="btn-open">Open</button>
+  <button id="zoom-toggle" title="Toggle 100% zoom">100%</button>
   <button id="btn-undo" disabled>Undo</button>
   <button id="btn-redo" disabled>Redo</button>
   <button id="btn-reset">Reset all</button>
@@ -21,7 +22,9 @@
   <button id="btn-load">Load</button>
   <button id="btn-save" class="primary">Save</button>
   <button id="btn-export-jpeg">JPEG</button>
+  <label class="quality" title="JPEG quality">Q <input type="range" id="export-quality" min="50" max="100" value="92"></label>
   <button id="btn-export-png" class="primary">Export PNG</button>
+  <button id="sheet-toggle" aria-expanded="true" title="Show or hide the panel">Hide panel</button>
 </header>
 <main id="stage">
   <div id="empty">
@@ -31,13 +34,16 @@
   <canvas id="view" hidden></canvas>
 </main>
 <section id="sheet" aria-label="Edit tools">
+  <div class="hist-wrap">
+    <div class="hist-head"><span>Histogram</span><span class="muted">luminance</span></div>
+    <canvas id="hist" width="512" height="168" aria-label="Histogram"></canvas>
+  </div>
   <nav class="tabs">
     <button id="tab-tune" aria-pressed="true">Tune</button>
     <button id="tab-geo" aria-pressed="false">Crop &amp; frame</button>
     <button id="tab-layers" aria-pressed="false">Layers</button>
     <button id="tab-history" aria-pressed="false">History</button>
     <button id="tab-fx" aria-pressed="false">Effects</button>
-    <button id="sheet-toggle" aria-expanded="true">Hide</button>
   </nav>
   <div id="panel-tune">
     <p class="note">Tune applies to the selected layer.</p>

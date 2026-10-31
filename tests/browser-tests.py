@@ -238,7 +238,7 @@ with sync_playwright() as p:
         for tab in ['tab-tune', 'tab-geo', 'tab-layers']:
             page.click('#' + tab)
             bids = page.evaluate("""() => [...document.querySelectorAll('button')]
-                .filter(b => b.id && b.offsetParent && !b.disabled && !['btn-open', 'lay-add-image'].includes(b.id)).map(b => b.id)""")
+                .filter(b => b.id && b.offsetParent && !b.disabled && !['btn-open', 'lay-add-image', 'sheet-toggle'].includes(b.id)).map(b => b.id)""")
             for bid in bids:
                 page.evaluate("id => document.getElementById(id).click()", bid)
                 page.wait_for_timeout(30)
