@@ -224,7 +224,7 @@ with sync_playwright() as p:
         # save, reload, load -> same layers and same pixel
         ref = px(page)
         page.click('#btn-save')
-        page.wait_for_function("document.getElementById('status').textContent.startsWith('Saved')")
+        page.wait_for_function("!state.dirty && document.getElementById('status').textContent.startsWith('Saved')")
         page.reload()
         page.wait_for_function("document.getElementById('project-select').options.length > 1")
         page.select_option('#project-select', index=1)

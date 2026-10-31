@@ -11,7 +11,7 @@
 </head>
 <body>
 <header class="top">
-  <strong>edit-it</strong>
+  <div class="brand"><span class="logo"></span><strong>edit-it</strong></div>
   <button id="btn-open">Open</button>
   <button id="btn-undo" disabled>Undo</button>
   <button id="btn-redo" disabled>Redo</button>
@@ -19,9 +19,9 @@
   <button id="before" title="Hold to see the original">Before</button>
   <select id="project-select"><option value="">Saved projects</option></select>
   <button id="btn-load">Load</button>
-  <button id="btn-save">Save</button>
+  <button id="btn-save" class="primary">Save</button>
   <button id="btn-export-jpeg">JPEG</button>
-  <button id="btn-export-png">PNG</button>
+  <button id="btn-export-png" class="primary">Export PNG</button>
 </header>
 <main id="stage">
   <div id="empty">

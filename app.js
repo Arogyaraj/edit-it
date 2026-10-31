@@ -837,7 +837,7 @@ async function dbDo(mode, fn) {
     t.onabort = () => rej(t.error);
   });
 }
-async function saveProject() {
+async function doSaveProject() {
   if (!state.doc) return;
   state.projectId = state.projectId || newId('P');
   const assets = [...state.assets.values()].map(a => ({ id: a.id, name: a.name, blob: a.blob }));
@@ -850,6 +850,12 @@ async function saveProject() {
   state.dirty = false;
   await refreshList();
   say('Saved ' + new Date().toLocaleTimeString() + '.');
+}
+// Saves run one at a time, in order, so an older autosave can never finish after a newer save.
+let saveChain = Promise.resolve();
+function saveProject() {
+  saveChain = saveChain.then(doSaveProject, doSaveProject);
+  return saveChain;
 }
 async function refreshList() {
   const all = await dbDo('readonly', s => s.getAll());

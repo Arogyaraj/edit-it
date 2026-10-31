@@ -6,6 +6,7 @@ A browser photo editor. Everything runs locally: photos and projects are stored 
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
 ## Included
+- Interface: a dark, quiet layout. Tabs are a segmented control, sliders and buttons are restyled, and the photo sits on a checkerboard so transparency shows. It collapses to the bottom with the Hide button and works from 360px phones up.
 - Open, drop, or paste a photo. Drop or paste adds a layer when a document is already open. EXIF orientation is applied.
 - Preview is capped at 2048px on the long side. Export composites the full-resolution layers.
 - Layers:
