@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>edit-it</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <strong>edit-it</strong>
+  <button id="btn-open">Open</button>
+  <button id="btn-undo" disabled>Undo</button>
+  <button id="btn-redo" disabled>Redo</button>
+  <button id="btn-reset">Reset all</button>
+  <button id="before" title="Hold to see the original">Before</button>
+  <select id="project-select"><option value="">Saved projects</option></select>
+  <button id="btn-load">Load</button>
+  <button id="btn-save">Save</button>
+  <button id="btn-export-jpeg">JPEG</button>
+  <button id="btn-export-png">PNG</button>
+</header>
+<main id="stage">
+  <div id="empty">
+    <p>Open, drop, or paste a photo.</p>
+    <p class="note">Everything stays in this browser. Nothing is uploaded to a server.</p>
+  </div>
+  <canvas id="view" hidden></canvas>
+</main>
+<section id="sheet" aria-label="Edit tools">
+  <nav class="tabs">
+    <button id="tab-tune" aria-pressed="true">Tune</button>
+    <button id="tab-geo" aria-pressed="false">Crop &amp; frame</button>
+    <button id="tab-layers" aria-pressed="false">Layers</button>
+    <button id="tab-history" aria-pressed="false">History</button>
+    <button id="tab-fx" aria-pressed="false">Effects</button>
+    <button id="sheet-toggle" aria-expanded="true">Hide</button>
+  </nav>
+  <div id="panel-tune">
+    <p class="note">Tune applies to the selected layer.</p>
+    <div id="sliders"></div>
+  </div>
+  <div id="panel-geo" hidden>
+    <div class="grp">
+      <label class="ctl">Straighten (degrees) <input type="range" id="str-angle" min="-45" max="45" step="0.5" value="0"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Perspective (corner offsets, % of image)</span>
+      <label class="ctl">TL x <input type="range" id="per-tlx" min="-30" max="30" value="0"></label>
+      <label class="ctl">TL y <input type="range" id="per-tly" min="-30" max="30" value="0"></label>
+      <label class="ctl">TR x <input type="range" id="per-trx" min="-30" max="30" value="0"></label>
+      <label class="ctl">TR y <input type="range" id="per-try" min="-30" max="30" value="0"></label>
+      <label class="ctl">BR x <input type="range" id="per-brx" min="-30" max="30" value="0"></label>
+      <label class="ctl">BR y <input type="range" id="per-bry" min="-30" max="30" value="0"></label>
+      <label class="ctl">BL x <input type="range" id="per-blx" min="-30" max="30" value="0"></label>
+      <label class="ctl">BL y <input type="range" id="per-bly" min="-30" max="30" value="0"></label>
+    </div>
+    <div class="grp">
+      <button id="rot-l">Rotate left</button>
+      <button id="rot-r">Rotate right</button>
+      <button id="flip-h">Flip H</button>
+      <button id="flip-v">Flip V</button>
+      <button id="geo-reset">Reset geometry</button>
+    </div>
+    <div class="grp">
+      <label class="ctl">Aspect
+        <select id="aspect">
+          <option value="free">Free</option>
+          <option value="original">Original</option>
+          <option value="1:1">1:1</option>
+          <option value="4:5">4:5</option>
+          <option value="3:2">3:2</option>
+          <option value="16:9">16:9</option>
+        </select>
+      </label>
+    </div>
+    <div class="grp">
+      <span class="head">Crop (% of image)</span>
+      <label class="ctl">X <input type="range" id="c-x" min="0" max="100" value="0"></label>
+      <label class="ctl">Y <input type="range" id="c-y" min="0" max="100" value="0"></label>
+      <label class="ctl">Width <input type="range" id="c-w" min="5" max="100" value="100"></label>
+      <label class="ctl">Height <input type="range" id="c-h" min="5" max="100" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Expand (% per side, solid fill)</span>
+      <label class="ctl">Top <input type="range" id="e-t" min="0" max="50" value="0"></label>
+      <label class="ctl">Bottom <input type="range" id="e-b" min="0" max="50" value="0"></label>
+      <label class="ctl">Left <input type="range" id="e-l" min="0" max="50" value="0"></label>
+      <label class="ctl">Right <input type="range" id="e-r" min="0" max="50" value="0"></label>
+      <label class="ctl">Fill <input type="color" id="e-color" value="#ffffff"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Frame</span>
+      <label class="ctl">Style
+        <select id="frame-type">
+          <option value="none">None</option>
+          <option value="solid">Solid</option>
+          <option value="polaroid">Polaroid</option>
+        </select>
+      </label>
+      <label class="ctl">Width <input type="range" id="frame-width" min="1" max="15" value="5"></label>
+      <label class="ctl">Colour <input type="color" id="frame-color" value="#ffffff"></label>
+    </div>
+  </div>
+  <div id="panel-layers" hidden>
+    <div class="grp">
+      <button id="lay-add-image">Add image</button>
+      <button id="lay-add-adjust">Add adjustment</button>
+      <button id="lay-up">Move up</button>
+      <button id="lay-down">Move down</button>
+      <button id="lay-dup">Duplicate</button>
+      <button id="lay-del">Delete</button>
+    </div>
+    <div id="layer-list" class="list"></div>
+    <div class="grp">
+      <label class="ctl">Name <input type="text" id="lay-name" maxlength="60"></label>
+      <label class="ctl"><input type="checkbox" id="lay-visible"> Visible</label>
+      <label class="ctl"><input type="checkbox" id="lay-lock"> Locked</label>
+      <label class="ctl">Blend
+        <select id="lay-blend">
+          <option value="normal">Normal</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+          <option value="soft-light">Soft light</option>
+          <option value="hard-light">Hard light</option>
+          <option value="color-dodge">Colour dodge</option>
+          <option value="color-burn">Colour burn</option>
+          <option value="difference">Difference</option>
+          <option value="exclusion">Exclusion</option>
+          <option value="hue">Hue</option>
+          <option value="saturation">Saturation</option>
+          <option value="color">Colour</option>
+          <option value="luminosity">Luminosity</option>
+        </select>
+      </label>
+      <label class="ctl">Opacity <input type="range" id="lay-opacity" min="0" max="100" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Position and size (image layers; % of document)</span>
+      <label class="ctl">X <input type="range" id="lay-x" min="-100" max="100" value="0"></label>
+      <label class="ctl">Y <input type="range" id="lay-y" min="-100" max="100" value="0"></label>
+      <label class="ctl">Scale <input type="range" id="lay-scale" min="5" max="300" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Mask</span>
+      <button id="mask-add">Add mask</button>
+      <button id="mask-remove">Remove mask</button>
+      <button id="mask-linear">Linear gradient</button>
+      <button id="mask-radial">Radial gradient</button>
+      <button id="mask-edit" aria-pressed="false">Edit mask</button>
+      <label class="ctl"><input type="checkbox" id="lay-mask-invert"> Invert</label>
+    </div>
+    <div class="grp">
+      <span class="head">Mask brush (edit mode; [ and ] change size)</span>
+      <label class="ctl">Size <input type="range" id="brush-size" min="1" max="400" value="60"></label>
+      <label class="ctl">Hardness <input type="range" id="brush-hard" min="0" max="100" value="50"></label>
+      <label class="ctl">Mode
+        <select id="brush-mode">
+          <option value="paint">Paint (reveal)</option>
+          <option value="erase">Erase (hide)</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div id="panel-fx" hidden>
+    <div class="grp">
+      <span class="head">Retouch: clone (healing is not built yet)</span>
+      <button id="retouch-add">Add retouch layer</button>
+      <button id="retouch-src">Set source</button>
+      <button id="retouch-paint" aria-pressed="false">Clone brush</button>
+    </div>
+    <div class="grp">
+      <button id="fx-vignette">Add vignette</button>
+      <button id="fx-selective" aria-pressed="false">Selective: tap image to place</button>
+      <label class="ctl">Radius <input type="range" id="sel-radius" min="2" max="80" value="20"></label>
+      <label class="ctl">Feather <input type="range" id="sel-feather" min="0" max="100" value="50"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Looks (sets the selected layer's tune)</span>
+      <button id="look-warm">Warm</button>
+      <button id="look-cool">Cool</button>
+      <button id="look-matte">Matte</button>
+      <button id="look-bw">Black &amp; white</button>
+      <button id="look-vivid">Vivid</button>
+    </div>
+    <div class="grp">
+      <span class="head">Curves (adjustment layers: shadows left, highlights right)</span>
+      <label class="ctl">0 <input type="range" id="curve-0" min="0" max="100" value="0"></label>
+      <label class="ctl">25 <input type="range" id="curve-1" min="0" max="100" value="25"></label>
+      <label class="ctl">50 <input type="range" id="curve-2" min="0" max="100" value="50"></label>
+      <label class="ctl">75 <input type="range" id="curve-3" min="0" max="100" value="75"></label>
+      <label class="ctl">100 <input type="range" id="curve-4" min="0" max="100" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Details (adjustment layers; sharpen flat areas stay unchanged)</span>
+      <label class="ctl">Sharpen <input type="range" id="det-sharpen" min="0" max="100" value="0"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Vignette (selected vignette layer)</span>
+      <label class="ctl">Strength <input type="range" id="vig-strength" min="0" max="100" value="60"></label>
+      <label class="ctl">Clear radius <input type="range" id="vig-radius" min="5" max="100" value="60"></label>
+      <label class="ctl">Centre X <input type="range" id="vig-x" min="0" max="100" value="50"></label>
+      <label class="ctl">Centre Y <input type="range" id="vig-y" min="0" max="100" value="50"></label>
+    </div>
+  </div>
+  <div id="panel-history" hidden>
+    <p class="note">Click a step to jump to it. Undo and redo move through the same list.</p>
+    <div id="history-list" class="list"></div>
+  </div>
+</section>
+<p id="status" role="status"></p>
+<input type="file" id="file-input" accept="image/*,.heic,.heif" hidden>
+<input type="file" id="add-input" accept="image/*,.heic,.heif" hidden>
+<script src="app.js"></script>
+</body>
+</html>
