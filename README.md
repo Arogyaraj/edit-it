@@ -6,6 +6,11 @@ A browser photo editor. Everything runs locally: photos and projects are stored 
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
 ## Included
+- Layer selection: click selects one layer. Ctrl/Cmd-click toggles, Shift-click selects a range, and Ctrl/Cmd+A selects all.
+- Batch edits on the selection: opacity, blend, visibility, lock, tune sliders, reset, duplicate, and delete. Locked layers are skipped by edits, but their lock can still be toggled. Move up and down need a single selected layer.
+- Groups: Group gives the selected layers a shared group id. Clicking one member selects the whole group. Ungroup clears it. Groups are a selection tag only: they don't composite as a unit and can't be nested.
+- Layer styles (image and retouch layers): drop shadow (blur, distance, opacity, colour), outer glow, stroke (width, colour), and colour overlay (opacity, colour). Styles are drawn under the layer's content, after its mask. Copy style, Paste style, and Clear style apply to the selection.
+- Layer list badges: mask, fx (a style is on), group, hidden, locked.
 - Layout: a Lightroom-style workspace. The inspector sits on the right on desktop and becomes a bottom sheet on phones. "Hide panel" gives the photo the full width.
 - Histogram: luminance, computed in a Web Worker (hist-worker.js) from a 256px copy of the preview, and updated after every change.
 - Zoom: "100%" shows the photo at actual pixels, scrollable. "Fit" returns to fit-to-screen.
@@ -32,6 +37,7 @@ Serve the folder over HTTP (the service worker needs http://localhost or HTTPS):
   - Solid or Polaroid frames with width and colour.
 - Layer masks: add a reveal-all mask, linear or radial gradient masks, invert, remove. Edit mode paints or erases with a brush (size, hardness, paint or erase mode; [ and ] change size). Masks are document-resolution and scale up for export.
 - Layer rename.
+- Layer styles are approximate: shadow and glow use canvas blur, which Safari supports only in newer versions. Stroke is a 16-direction offset, not a true outline.
 - Geometry additions:
   - Straighten: a fine rotation from -45° to 45°. The image is scaled up so no transparent corner shows.
   - Perspective: eight corner-offset sliders (±30% of the image) drive a homography warp with nearest-neighbour sampling.

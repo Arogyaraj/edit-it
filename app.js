@@ -27,7 +27,7 @@ const state = {
   doc: null, docName: '', assets: new Map(), masks: new Map(), layers: [], geo: defaultGeo(), selectedId: null,
   history: [], hIndex: 0, projectId: null, dirty: false, gl: null, glCanvas: null,
   maskMode: false, pickMode: false, cloneMode: false, cloneSrcPending: false, cloneSrc: null, live: null,
-  tuneCache: new Map(), stats: { glDraws: 0, cacheHits: 0 }, actual: false, showOrig: false, histLast: null
+  selection: [], styleClip: null, tuneCache: new Map(), stats: { glDraws: 0, cacheHits: 0 }, actual: false, showOrig: false, histLast: null
 };
 const $ = id => document.getElementById(id);
 const say = msg => { $('status').textContent = msg; };
@@ -248,6 +248,56 @@ function addRetouch() {
   afterChange('Add retouch layer');
 }
 
+// Colour-fills a canvas with the given colour, keeping its alpha.
+function tintCanvas(src, color) {
+  const t = canvasOf(src.width, src.height), tc = t.getContext('2d');
+  tc.drawImage(src, 0, 0);
+  tc.globalCompositeOperation = 'source-in';
+  tc.fillStyle = color;
+  tc.fillRect(0, 0, t.width, t.height);
+  return t;
+}
+// A tinted, blurred and offset copy of a layer's silhouette, used for shadows and glows.
+function silhouette(tinted, alpha, blur, dx, dy) {
+  const out = canvasOf(tinted.width, tinted.height), oc = out.getContext('2d');
+  oc.filter = blur > 0 ? `blur(${blur}px)` : 'none';
+  oc.globalAlpha = alpha;
+  oc.drawImage(tinted, dx, dy);
+  oc.filter = 'none';
+  return out;
+}
+// Draws the styles under the layer (shadow, glow, stroke) and the colour overlay over it.
+function applyFx(lc, fx) {
+  if (!fx) return lc;
+  const on = k => !!(fx[k] && fx[k].on);
+  if (!on('shadow') && !on('glow') && !on('stroke') && !on('overlay')) return lc;
+  const out = canvasOf(lc.width, lc.height), o = out.getContext('2d');
+  if (on('shadow')) {
+    const s = fx.shadow;
+    o.drawImage(silhouette(tintCanvas(lc, s.color), s.opacity / 100, s.blur, Math.round(s.dist * 0.6), Math.round(s.dist)), 0, 0);
+  }
+  if (on('glow')) {
+    const g = fx.glow;
+    o.drawImage(silhouette(tintCanvas(lc, g.color), g.opacity / 100, g.blur, 0, 0), 0, 0);
+  }
+  if (on('stroke')) {
+    const t = tintCanvas(lc, fx.stroke.color), ring = canvasOf(lc.width, lc.height), rc = ring.getContext('2d');
+    const w = fx.stroke.width, steps = 16;
+    for (let i = 0; i < steps; i++) {
+      const a = i / steps * Math.PI * 2;
+      rc.drawImage(t, Math.round(Math.cos(a) * w), Math.round(Math.sin(a) * w));
+    }
+    o.drawImage(ring, 0, 0);
+  }
+  o.drawImage(lc, 0, 0);
+  if (on('overlay')) {
+    o.globalAlpha = fx.overlay.opacity / 100;
+    o.drawImage(tintCanvas(lc, fx.overlay.color), 0, 0);
+    o.globalAlpha = 1;
+  }
+  return out;
+}
+
 function withMask(lc, m, invert) {
   const out = canvasOf(lc.width, lc.height), o = out.getContext('2d');
   o.drawImage(lc, 0, 0);
@@ -347,6 +397,7 @@ function composite(full, raw = false, upTo = null) {
     if (!raw) {
       const m = maskFor(L, full);
       if (m) lc = withMask(lc, m, L.maskInvert);
+      if (L.type === 'image' || L.type === 'paint') lc = applyFx(lc, L.fx);
     }
     const g = acc.getContext('2d');
     g.save();
@@ -550,6 +601,13 @@ function syncUI() {
   $('view').classList.toggle('mask-mode', state.maskMode);
   renderLayerList();
   renderHistory();
+  const picked = selectedLayers();
+  $('lay-group').disabled = picked.length < 2;
+  $('lay-ungroup').disabled = !picked.some(x => x.group);
+  $('fx-copy').disabled = !L;
+  $('fx-paste').disabled = !state.styleClip || !targets().length;
+  $('fx-clear').disabled = !targets().length;
+  syncFxUI(L);
 
   const isAdj = !!L && L.type === 'adjust', isVig = !!L && L.type === 'vignette';
   for (let i = 0; i < 5; i++) {
@@ -586,11 +644,23 @@ function syncUI() {
   updateUndo();
 }
 
+// Selection: state.selection holds ids; the primary layer is state.selectedId. A stale selection falls back to the primary.
+function selectedLayers() {
+  const ids = state.selection.includes(state.selectedId) ? state.selection : [state.selectedId];
+  return state.layers.filter(L => ids.includes(L.id));
+}
+// Selected layers that can be edited (locked layers are skipped).
+function targets() { return selectedLayers().filter(L => !L.locked); }
+function setSelection(ids, primary) { state.selection = ids; state.selectedId = primary; }
+const hasFx = L => !!L.fx && Object.values(L.fx).some(f => f.on);
+
 function renderLayerList() {
+  const picked = new Set(selectedLayers().map(L => L.id));
   const rows = [...state.layers].reverse().map(L => {
     const tag = { adjust: '[adj]', vignette: '[vig]', paint: '[ret]' }[L.type] || '[img]';
-    const flags = (L.mask ? ' (mask)' : '') + (L.visible ? '' : ' (hidden)') + (L.locked ? ' (locked)' : '');
-    return `<button class="lrow${L.id === state.selectedId ? ' on' : ''}" data-id="${esc(L.id)}">${tag} ${esc(L.name)}${flags}</button>`;
+    const flags = (L.mask ? ' · mask' : '') + (hasFx(L) ? ' · fx' : '') + (L.group ? ' · group' : '') +
+      (L.visible ? '' : ' · hidden') + (L.locked ? ' · locked' : '');
+    return `<button class="lrow${picked.has(L.id) ? ' on' : ''}" data-id="${esc(L.id)}">${tag} ${esc(L.name)}${flags}</button>`;
   });
   $('layer-list').innerHTML = rows.join('') || '<p class="note">No layers. Open a photo to start.</p>';
 }
@@ -600,7 +670,26 @@ function renderHistory() {
 }
 $('layer-list').addEventListener('click', e => {
   const b = e.target.closest('[data-id]');
-  if (b) { state.selectedId = b.dataset.id; syncUI(); }
+  if (!b) return;
+  const id = b.dataset.id, order = state.layers.map(L => L.id);
+  const current = state.selection.includes(state.selectedId) ? state.selection.slice() : [state.selectedId];
+  if (e.shiftKey && state.selectedId) {
+    const a = order.indexOf(state.selectedId), c = order.indexOf(id);
+    setSelection(order.slice(Math.min(a, c), Math.max(a, c) + 1), id);
+  } else if (e.metaKey || e.ctrlKey) {
+    if (current.includes(id)) {
+      const rest = current.filter(x => x !== id);
+      setSelection(rest, rest[rest.length - 1] || null);
+    } else {
+      setSelection([...current, id], id);
+    }
+  } else {
+    // Clicking a grouped layer selects its whole group.
+    const L = state.layers.find(x => x.id === id);
+    const ids = L && L.group ? state.layers.filter(x => x.group === L.group).map(x => x.id) : [id];
+    setSelection(ids, id);
+  }
+  syncUI();
 });
 $('history-list').addEventListener('click', e => {
   const b = e.target.closest('[data-h]');
@@ -670,25 +759,59 @@ function imageLayer(a, name) {
     opacity: 100, blend: 'normal', x: 0, y: 0, scale: 1, params: zeros(), mask: null, maskInvert: false };
 }
 function moveSel(d) {
-  const L = sel(); if (!requireUnlocked(L)) return;
+  const picked = selectedLayers();
+  if (picked.length !== 1) { say('Select one layer to reorder it.'); return; }
+  const L = picked[0]; if (!requireUnlocked(L)) return;
   const i = state.layers.indexOf(L), j = i + d;
   if (j < 0 || j >= state.layers.length) return;
   [state.layers[i], state.layers[j]] = [state.layers[j], state.layers[i]];
   afterChange('Move layer');
 }
 function dupSel() {
-  const L = sel(); if (!requireUnlocked(L)) return;
-  const C = clone(L);
-  C.id = newId('L'); C.name = L.name + ' copy';
-  insertAboveSelected(C);
-  afterChange('Duplicate layer');
+  const ts = targets();
+  if (!ts.length) { say('Select an unlocked layer to duplicate.'); return; }
+  const copies = [];
+  ts.slice().sort((a, b) => state.layers.indexOf(b) - state.layers.indexOf(a)).forEach(L => {
+    const C = clone(L);
+    C.id = newId('L'); C.name = L.name + ' copy';
+    state.layers.splice(state.layers.indexOf(L) + 1, 0, C);
+    copies.push(C.id);
+  });
+  setSelection(copies, copies[0]);
+  afterChange('Duplicate layers');
 }
 function delSel() {
-  const L = sel(); if (!requireUnlocked(L)) return;
-  const i = state.layers.indexOf(L);
-  state.layers.splice(i, 1);
-  state.selectedId = state.layers.length ? state.layers[Math.min(i, state.layers.length - 1)].id : null;
-  afterChange('Delete layer');
+  const ts = targets();
+  if (!ts.length) { say('Select an unlocked layer to delete.'); return; }
+  const ids = new Set(ts.map(L => L.id));
+  const first = state.layers.findIndex(L => ids.has(L.id));
+  state.layers = state.layers.filter(L => !ids.has(L.id));
+  const next = state.layers[Math.min(first, state.layers.length - 1)] || null;
+  setSelection(next ? [next.id] : [], next ? next.id : null);
+  afterChange('Delete layers');
+}
+// ---------- Layer styles: drop shadow, outer glow, stroke, colour overlay ----------
+const FX_DEFAULT = () => ({
+  shadow: { on: false, color: '#000000', opacity: 60, blur: 8, dist: 10 },
+  glow: { on: false, color: '#8fb0ff', opacity: 60, blur: 16 },
+  stroke: { on: false, color: '#ffffff', width: 3 },
+  overlay: { on: false, color: '#8fb0ff', opacity: 40 },
+});
+const FX_UI = [
+  ['fx-shadow-on', 'shadow', 'on', 'check'], ['fx-shadow-blur', 'shadow', 'blur', 'num'], ['fx-shadow-dist', 'shadow', 'dist', 'num'],
+  ['fx-shadow-opacity', 'shadow', 'opacity', 'num'], ['fx-shadow-color', 'shadow', 'color', 'str'],
+  ['fx-glow-on', 'glow', 'on', 'check'], ['fx-glow-blur', 'glow', 'blur', 'num'], ['fx-glow-opacity', 'glow', 'opacity', 'num'], ['fx-glow-color', 'glow', 'color', 'str'],
+  ['fx-stroke-on', 'stroke', 'on', 'check'], ['fx-stroke-width', 'stroke', 'width', 'num'], ['fx-stroke-color', 'stroke', 'color', 'str'],
+  ['fx-over-on', 'overlay', 'on', 'check'], ['fx-over-opacity', 'overlay', 'opacity', 'num'], ['fx-over-color', 'overlay', 'color', 'str'],
+];
+const fxRead = (el, t) => (t === 'check' ? el.checked : t === 'num' ? +el.value : el.value);
+function syncFxUI(L) {
+  const f = (L && L.fx) || FX_DEFAULT(), ok = !!L && !L.locked;
+  FX_UI.forEach(([id, g, k, t]) => {
+    const el = $(id);
+    if (t === 'check') el.checked = !!f[g][k]; else el.value = f[g][k];
+    el.disabled = !ok;
+  });
 }
 function addAdjust() {
   if (!state.doc) { say('Open a photo first.'); return; }
@@ -928,8 +1051,10 @@ async function refreshList() {
 
 // ---------- Sliders (tune the selected layer) ----------
 function resetParam(k) {
-  const L = sel(); if (!L || L.locked) return;
-  L.params[k] = 0; syncUI(); render(); commit('Reset ' + LABEL[k]);
+  const ts = targets().filter(L => L.params);
+  if (!ts.length) return;
+  ts.forEach(L => { L.params[k] = 0; });
+  syncUI(); render(); commit('Reset ' + LABEL[k]);
 }
 function buildSliders() {
   const box = $('sliders');
@@ -943,8 +1068,11 @@ function buildSliders() {
     box.appendChild(row);
     const el = row.querySelector('input');
     el.addEventListener('input', () => {
-      const L = sel(); if (!L || L.locked) return;
-      L.params[k] = +el.value; $('v-' + k).textContent = el.value; renderSoon();
+      const ts = targets().filter(L => L.params);
+      if (!ts.length) return;
+      ts.forEach(L => { L.params[k] = +el.value; });
+      $('v-' + k).textContent = el.value;
+      renderSoon();
     });
     el.addEventListener('change', () => { commit(LABEL[k]); render(); });
     el.addEventListener('dblclick', () => resetParam(k));
@@ -1012,16 +1140,16 @@ for (const id of Object.keys(GEO_CONTROLS)) {
 
 for (const id of Object.keys(LAYER_CONTROLS)) {
   const el = $(id);
-  el.addEventListener('input', () => { const L = sel(); if (!requireUnlocked(L)) return; LAYER_CONTROLS[id](L, el.value); syncUI(); render(); });
-  el.addEventListener('change', () => { const L = sel(); if (!requireUnlocked(L)) return; LAYER_CONTROLS[id](L, el.value); syncUI(); render(); commit('Layer ' + id.slice(4)); });
+  el.addEventListener('input', () => { const ts = targets(); if (!ts.length) return; ts.forEach(L => LAYER_CONTROLS[id](L, el.value)); syncUI(); render(); });
+  el.addEventListener('change', () => { const ts = targets(); if (!ts.length) return; ts.forEach(L => LAYER_CONTROLS[id](L, el.value)); syncUI(); render(); commit('Layer ' + id.slice(4)); });
 }
 $('lay-name').addEventListener('change', () => {
   const L = sel(); if (!requireUnlocked(L)) return;
   const v = $('lay-name').value.trim();
   if (v) { L.name = v; afterChange('Rename layer'); }
 });
-$('lay-visible').addEventListener('change', () => { const L = sel(); if (L) { L.visible = $('lay-visible').checked; afterChange('Visibility'); } });
-$('lay-lock').addEventListener('change', () => { const L = sel(); if (L) { L.locked = $('lay-lock').checked; afterChange('Lock'); } });
+$('lay-visible').addEventListener('change', () => { const v = $('lay-visible').checked; selectedLayers().forEach(L => { L.visible = v; }); afterChange('Visibility'); });
+$('lay-lock').addEventListener('change', () => { const v = $('lay-lock').checked; selectedLayers().forEach(L => { L.locked = v; }); afterChange('Lock'); });
 $('lay-mask-invert').addEventListener('change', () => {
   const L = sel(); if (!requireUnlocked(L) || !L.mask) return;
   L.maskInvert = $('lay-mask-invert').checked;
@@ -1106,6 +1234,40 @@ $('retouch-paint').onclick = () => {
   state.cloneMode = !state.cloneMode; state.maskMode = false; state.pickMode = false; state.cloneSrcPending = false;
   syncUI(); render();
 };
+$('lay-group').onclick = () => {
+  const ts = selectedLayers();
+  if (ts.length < 2) { say('Select two or more layers to group them.'); return; }
+  const g = newId('G');
+  ts.forEach(L => { L.group = g; });
+  afterChange('Group layers');
+};
+$('lay-ungroup').onclick = () => {
+  const ts = selectedLayers();
+  if (!ts.some(L => L.group)) { say('The selection is not grouped.'); return; }
+  ts.forEach(L => { L.group = null; });
+  afterChange('Ungroup');
+};
+for (const [id, g, k, t] of FX_UI) {
+  const el = $(id);
+  const apply = () => targets().forEach(L => { if (!L.fx) L.fx = FX_DEFAULT(); L.fx[g][k] = fxRead(el, t); });
+  el.addEventListener('input', () => { apply(); syncUI(); render(); });
+  el.addEventListener('change', () => { apply(); syncUI(); render(); commit('Layer style'); });
+}
+$('fx-copy').onclick = () => {
+  const L = sel();
+  state.styleClip = clone(L && L.fx ? L.fx : FX_DEFAULT());
+  say('Layer style copied. Select a layer and paste it.');
+  syncUI();
+};
+$('fx-paste').onclick = () => {
+  if (!state.styleClip) { say('Copy a layer style first.'); return; }
+  targets().forEach(L => { L.fx = clone(state.styleClip); });
+  afterChange('Paste layer style');
+};
+$('fx-clear').onclick = () => {
+  targets().forEach(L => { L.fx = FX_DEFAULT(); });
+  afterChange('Clear layer style');
+};
 $('zoom-toggle').onclick = () => {
   state.actual = !state.actual;
   $('view').classList.toggle('actual', state.actual);
@@ -1165,6 +1327,7 @@ addEventListener('keydown', e => {
   if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === 'e') { e.preventDefault(); exportImage('png'); }
   else if (k === 's') { e.preventDefault(); saveProject().catch(err => say('Save failed: ' + err.message)); }
+  else if (k === 'a' && state.layers.length) { e.preventDefault(); setSelection(state.layers.map(L => L.id), state.selectedId || state.layers[state.layers.length - 1].id); syncUI(); }
 });
 
 setInterval(() => {

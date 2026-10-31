@@ -152,6 +152,34 @@
       <label class="ctl">Scale <input type="range" id="lay-scale" min="5" max="300" value="100"></label>
     </div>
     <div class="grp">
+      <button id="lay-group">Group</button>
+      <button id="lay-ungroup">Ungroup</button>
+      <span class="muted">Ctrl/Cmd-click or Shift-click to select several layers. Ctrl+A selects all.</span>
+    </div>
+    <div class="grp">
+      <span class="head">Layer style (image and retouch layers)</span>
+      <label class="ctl"><input type="checkbox" id="fx-shadow-on"> Drop shadow</label>
+      <label class="ctl">Blur <input type="range" id="fx-shadow-blur" min="0" max="40" value="8"></label>
+      <label class="ctl">Distance <input type="range" id="fx-shadow-dist" min="0" max="60" value="10"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-shadow-opacity" min="0" max="100" value="60"></label>
+      <label class="ctl">Colour <input type="color" id="fx-shadow-color" value="#000000"></label>
+      <label class="ctl"><input type="checkbox" id="fx-glow-on"> Outer glow</label>
+      <label class="ctl">Blur <input type="range" id="fx-glow-blur" min="0" max="60" value="16"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-glow-opacity" min="0" max="100" value="60"></label>
+      <label class="ctl">Colour <input type="color" id="fx-glow-color" value="#8fb0ff"></label>
+      <label class="ctl"><input type="checkbox" id="fx-stroke-on"> Stroke</label>
+      <label class="ctl">Width <input type="range" id="fx-stroke-width" min="1" max="20" value="3"></label>
+      <label class="ctl">Colour <input type="color" id="fx-stroke-color" value="#ffffff"></label>
+      <label class="ctl"><input type="checkbox" id="fx-over-on"> Colour overlay</label>
+      <label class="ctl">Opacity <input type="range" id="fx-over-opacity" min="0" max="100" value="40"></label>
+      <label class="ctl">Colour <input type="color" id="fx-over-color" value="#8fb0ff"></label>
+    </div>
+    <div class="grp">
+      <button id="fx-copy">Copy style</button>
+      <button id="fx-paste">Paste style</button>
+      <button id="fx-clear">Clear style</button>
+    </div>
+    <div class="grp">
       <span class="head">Mask</span>
       <button id="mask-add">Add mask</button>
       <button id="mask-remove">Remove mask</button>
