@@ -24,6 +24,8 @@
   <button id="btn-export-jpeg">JPEG</button>
   <label class="quality" title="JPEG quality">Q <input type="range" id="export-quality" min="50" max="100" value="92"></label>
   <button id="btn-export-png" class="primary">Export PNG</button>
+  <button id="clip-toggle" aria-pressed="false" title="Show clipped highlights and shadows (J)">Clipping</button>
+  <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
   <button id="sheet-toggle" aria-expanded="true" title="Show or hide the panel">Hide panel</button>
 </header>
 <main id="stage">
@@ -47,6 +49,11 @@
   </nav>
   <div id="panel-tune">
     <p class="note">Tune applies to the selected layer.</p>
+    <div class="grp">
+      <button id="tune-auto" title="Set brightness and contrast from the image">Auto tone</button>
+      <button id="tune-copy">Copy tune</button>
+      <button id="tune-paste">Paste tune</button>
+    </div>
     <div id="sliders"></div>
   </div>
   <div id="panel-geo" hidden>
@@ -249,6 +256,22 @@
 <p id="status" role="status"></p>
 <input type="file" id="file-input" accept="image/*,.heic,.heif" hidden>
 <input type="file" id="add-input" accept="image/*,.heic,.heif" hidden>
+<dialog id="help" aria-labelledby="help-title">
+  <h2 id="help-title">Keyboard shortcuts</h2>
+  <dl class="keys">
+    <dt>Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z</dt><dd>Undo, redo</dd>
+    <dt>Ctrl/Cmd+S</dt><dd>Save project</dd>
+    <dt>Ctrl/Cmd+E</dt><dd>Export PNG</dd>
+    <dt>Ctrl/Cmd+A</dt><dd>Select all layers</dd>
+    <dt>Ctrl/Cmd+D</dt><dd>Duplicate selected layers</dd>
+    <dt>Delete, Backspace</dt><dd>Delete selected layers</dd>
+    <dt>Ctrl/Cmd-click, Shift-click</dt><dd>Add to selection, select a range</dd>
+    <dt>\</dt><dd>Toggle before and after</dd>
+    <dt>J</dt><dd>Toggle clipping warning</dd>
+    <dt>[ and ]</dt><dd>Mask brush smaller and larger</dd>
+  </dl>
+  <button id="help-close" class="primary">Close</button>
+</dialog>
 <script src="app.js"></script>
 </body>
 </html>

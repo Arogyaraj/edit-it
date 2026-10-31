@@ -6,6 +6,11 @@ A browser photo editor. Everything runs locally: photos and projects are stored 
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
 ## Included
+- Auto tone (Tune tab): measures the unedited preview and sets brightness and contrast on the selected layers from the median and spread. Undoable.
+- Copy tune and paste tune: move the Tune settings between layers.
+- Clipping warning (J, or the Clipping button): blown highlights (any channel 254+) show red, and crushed shadows (all channels 1 or less) show blue. The overlay is for viewing only; it doesn't change the image or the histogram.
+- Shortcut help (?): a dialog listing every shortcut.
+- Delete or Backspace removes the selected layers. Ctrl/Cmd+D duplicates them.
 - Layer selection: click selects one layer. Ctrl/Cmd-click toggles, Shift-click selects a range, and Ctrl/Cmd+A selects all.
 - Batch edits on the selection: opacity, blend, visibility, lock, tune sliders, reset, duplicate, and delete. Locked layers are skipped by edits, but their lock can still be toggled. Move up and down need a single selected layer.
 - Groups: Group gives the selected layers a shared group id. Clicking one member selects the whole group. Ungroup clears it. Groups are a selection tag only: they don't composite as a unit and can't be nested.
@@ -97,6 +102,8 @@ Needs WebGL 2 and `createImageBitmap` with `imageOrientation`. Targets current C
   - Export dimensions.
   - That clicking every visible button raises no page error.
 - The button sweep dispatches clicks inside the page. It checks handlers, not Playwright's hit-testing.
+- Extras tests (auto tone, tune copy and paste, clipping, help dialog, Delete and Ctrl+D): `python3 tests/extras-tests.py`.
+- Layer tests (selection, batch edits, groups, styles): `python3 tests/layers-tests.py`.
 - Pixel tests for Straighten, Perspective, and Clone: `python3 tests/tools-tests.py`.
 - Not verified: real GPU drivers, iOS Safari limits, HEIC decoding, PWA installation on a device, and blend-mode output against a reference other than the browser's own compositor.
 

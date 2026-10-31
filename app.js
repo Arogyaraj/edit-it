@@ -27,7 +27,7 @@ const state = {
   doc: null, docName: '', assets: new Map(), masks: new Map(), layers: [], geo: defaultGeo(), selectedId: null,
   history: [], hIndex: 0, projectId: null, dirty: false, gl: null, glCanvas: null,
   maskMode: false, pickMode: false, cloneMode: false, cloneSrcPending: false, cloneSrc: null, live: null,
-  selection: [], styleClip: null, tuneCache: new Map(), stats: { glDraws: 0, cacheHits: 0 }, actual: false, showOrig: false, histLast: null
+  selection: [], styleClip: null, tuneClip: null, clip: false, tuneCache: new Map(), stats: { glDraws: 0, cacheHits: 0 }, actual: false, showOrig: false, histLast: null
 };
 const $ = id => document.getElementById(id);
 const say = msg => { $('status').textContent = msg; };
@@ -524,6 +524,7 @@ function renderNow(raw = false) {
   v.width = out.width; v.height = out.height;
   v.getContext('2d').drawImage(out, 0, 0);
   updateHistogram();
+  if (state.clip) clipOverlay(v);
 }
 
 // Continuous input (slider drags, brush moves) is coalesced to one render per animation frame.
@@ -570,6 +571,46 @@ function drawHistogram(bins) {
   }
 }
 
+// Clipping warning: highlights with any channel at 254+ turn red, shadows with all channels at 1 or less turn blue.
+function clipOverlay(v) {
+  const ctx = v.getContext('2d'), img = ctx.getImageData(0, 0, v.width, v.height), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i] >= 254 || d[i + 1] >= 254 || d[i + 2] >= 254) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 0; }
+    else if (d[i] <= 1 && d[i + 1] <= 1 && d[i + 2] <= 1) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 255; }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function toggleClip() {
+  state.clip = !state.clip;
+  $('clip-toggle').setAttribute('aria-pressed', state.clip);
+  render();
+}
+
+// Auto tone: measures the unedited preview, then sets brightness and contrast on the selected layers.
+function autoTone() {
+  const ts = targets().filter(L => L.params);
+  if (!ts.length) { say('Select an unlocked layer to tone.'); return; }
+  render(true);
+  const v = $('view'), w = Math.min(256, v.width), h = Math.max(1, Math.round(v.height * w / v.width));
+  const c = canvasOf(w, h), x = c.getContext('2d');
+  x.drawImage(v, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, bins = new Uint32Array(256);
+  for (let i = 0; i < d.length; i += 4) bins[Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2])]++;
+  const n = w * h;
+  const pct = q => { let acc = 0; for (let i = 0; i < 256; i++) { acc += bins[i]; if (acc >= q * n) return i; } return 255; };
+  const med = pct(0.5), spread = pct(0.99) - pct(0.01);
+  const bright = Math.max(-100, Math.min(100, Math.round((128 - med) * 0.8)));
+  const contrast = Math.max(-40, Math.min(25, Math.round((230 - spread) / 3)));
+  ts.forEach(L => { L.params.brightness = bright; L.params.contrast = contrast; });
+  syncUI(); render(); commit('Auto tone');
+  say(`Auto tone: brightness ${bright}, contrast ${contrast}.`);
+}
+
+function openHelp() {
+  const d = $('help');
+  if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+}
+
 function syncUI() {
   const L = sel(), p = (L && L.params) || zeros();
   const editable = !!L && !L.locked;
@@ -608,6 +649,10 @@ function syncUI() {
   $('fx-paste').disabled = !state.styleClip || !targets().length;
   $('fx-clear').disabled = !targets().length;
   syncFxUI(L);
+  $('tune-auto').disabled = !state.doc || !targets().some(x => x.params);
+  $('tune-copy').disabled = !L || !L.params;
+  $('tune-paste').disabled = !state.tuneClip || !targets().some(x => x.params);
+  $('clip-toggle').setAttribute('aria-pressed', state.clip);
 
   const isAdj = !!L && L.type === 'adjust', isVig = !!L && L.type === 'vignette';
   for (let i = 0; i < 5; i++) {
@@ -1268,6 +1313,21 @@ $('fx-clear').onclick = () => {
   targets().forEach(L => { L.fx = FX_DEFAULT(); });
   afterChange('Clear layer style');
 };
+$('tune-auto').onclick = autoTone;
+$('tune-copy').onclick = () => {
+  const L = sel(); if (!L || !L.params) return;
+  state.tuneClip = clone(L.params);
+  say('Tune copied. Select a layer and paste it.');
+  syncUI();
+};
+$('tune-paste').onclick = () => {
+  if (!state.tuneClip) return;
+  targets().filter(L => L.params).forEach(L => { L.params = clone(state.tuneClip); });
+  afterChange('Paste tune');
+};
+$('clip-toggle').onclick = toggleClip;
+$('help-btn').onclick = openHelp;
+$('help-close').onclick = () => $('help').close();
 $('zoom-toggle').onclick = () => {
   state.actual = !state.actual;
   $('view').classList.toggle('actual', state.actual);
@@ -1316,6 +1376,10 @@ addEventListener('keydown', e => {
     return;
   }
   if (!(e.ctrlKey || e.metaKey)) {
+    const inField = ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName);
+    if (!inField && (e.key === 'j' || e.key === 'J')) { toggleClip(); return; }
+    if (!inField && e.key === '?') { openHelp(); return; }
+    if (!inField && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); delSel(); return; }
     if (state.maskMode && (e.key === '[' || e.key === ']')) {
       const s = $('brush-size');
       s.value = Math.max(1, Math.min(400, Math.round(+s.value * (e.key === ']' ? 1.15 : 0.87))));
@@ -1327,6 +1391,7 @@ addEventListener('keydown', e => {
   if (k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (k === 'e') { e.preventDefault(); exportImage('png'); }
   else if (k === 's') { e.preventDefault(); saveProject().catch(err => say('Save failed: ' + err.message)); }
+  else if (k === 'd') { e.preventDefault(); dupSel(); }
   else if (k === 'a' && state.layers.length) { e.preventDefault(); setSelection(state.layers.map(L => L.id), state.selectedId || state.layers[state.layers.length - 1].id); syncUI(); }
 });
 
