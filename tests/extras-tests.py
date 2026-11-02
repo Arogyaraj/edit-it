@@ -86,6 +86,22 @@ with sync_playwright() as p:
         page.click('#help-close')
         check(f'{name}: help closes', not page.evaluate("document.getElementById('help').open"))
 
+        # tabs are pages: URL hash, title, and previous/next
+        page.click('#tab-layers')
+        check(f'{name}: the Layers tab sets the #layers hash', page.evaluate("location.hash") == '#layers')
+        check(f'{name}: the page title follows the tab', page.inner_text('#page-title') == 'Layers')
+        check(f'{name}: only the Layers panel is shown', page.is_visible('#panel-layers') and not page.is_visible('#panel-tune'))
+        page.click('#page-next')
+        check(f'{name}: next page moves to History', page.evaluate("location.hash") == '#history' and page.inner_text('#page-title') == 'History')
+        page.click('#page-prev')
+        check(f'{name}: previous page returns to Layers', page.inner_text('#page-title') == 'Layers')
+        # a direct link opens its page (in a fresh tab, so the photo above is not reloaded away)
+        direct = ctx.new_page()
+        direct.goto(URL + '#effects')
+        direct.wait_for_function("document.getElementById('sliders').children.length === 6")
+        check(f'{name}: opening #effects shows the Effects page', direct.inner_text('#page-title') == 'Effects' and direct.is_visible('#panel-fx'))
+        direct.close()
+
         # Delete and Ctrl+D on layers
         page.set_input_files('#add-input', RED)
         page.wait_for_function("document.querySelectorAll('#layer-list .lrow').length === 2")

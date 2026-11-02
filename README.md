@@ -14,10 +14,12 @@ A browser photo editor. Everything runs locally: photos and projects are stored 
 Your original photo is never changed. Every edit is a layer or an undoable step. Nothing leaves your device.
 
 ### The interface
+Each inspector tab is a page with its own address (`#tune`, `#crop`, `#layers`, `#history`, `#effects`). Use the browser's back and forward buttons, the ‹ › arrows in the page header, or open a page directly from its link. Your photo and edits stay loaded while you move between pages.
+
 - **Header**: Open, undo and redo, 100% zoom, Before (hold to see the original), saved projects, Save, JPEG quality, Export, Clipping, help (?), and Hide panel.
-- **Histogram**: the luminance of the current picture. It updates as you edit.
-- **Tabs**: Tune, Crop & frame, Layers, History, Effects.
-- **Toolbar on the photo**: Select, Move, Crop, Straighten.
+- **Histogram**: the luminance of the current picture. Press RGB to see the three channels together. It updates as you edit.
+- **Pages** (tabs): Tune, Crop, Layers, History, Effects.
+- **Toolbar on the photo**: Select, Move, Crop, Straighten, Perspective.
 - **Status line** (bottom): tells you what just happened.
 
 ### Canvas tools
@@ -27,6 +29,9 @@ Your original photo is never changed. Every edit is a layer or an undoable step.
 | Move | M | Drag an image layer to move it. Drag a corner to scale it, or the handle above it to rotate. Shift snaps rotation to 15°. Drag near the centre to snap to it. Arrow keys nudge one pixel (Shift for ten). |
 | Crop | C | Drag the corners or edges, or drag inside to move the crop. The grid and size show while you work. Aspect presets hold their ratio. |
 | Straighten | S | Drag along something that should be level, such as a horizon. The slope sets the angle, up to ±45°. |
+| Perspective | P | Drag any of the four corners to correct keystone distortion. The dashed outline shows the source area. |
+
+**Zoom and pan**: scroll the mouse wheel over the photo (or Ctrl/Cmd+wheel) to zoom. `+` and `-` zoom step by step, `0` returns to fit, and `1` shows 100%. Hold Space and drag to pan a zoomed photo. The zoom level shows in the corner of the canvas.
 
 Clipping (J) shows blown highlights in red and crushed shadows in blue. Hold **Before**, or press \ to see the original.
 
@@ -75,13 +80,44 @@ Clipping (J) shows blown highlights in red and crushed shadows in blue. Hold **B
 - Looks replace the layer's tune values. You can adjust them afterwards.
 - Shadows and glows need canvas blur. Older Safari versions show them without blur.
 - HEIC photos don't open in most desktop browsers. Convert them to JPEG or PNG first.
-- If the panel is in the way, use **Hide panel** in the header.
+- If the panel is in the way, use **Hide panel** in the header. On phones, Reset all and Help are under the ••• button.
+- Clone shows a circle and crosshair at the source point, sized to the brush.
+- **Delete** next to Load removes the selected saved project. It asks you to press it a second time to confirm.
 - The app works offline after the first load. Install it from the browser menu to use it like an app.
 
 ## Run
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
 ## Included
+- Mobile:
+  - Portrait phones: the inspector is a bottom sheet with a handle. Tap the handle to hide or show it; the handle stays visible when the panel is hidden. The tab row and the photo keep their place as you scroll.
+  - Touch targets: buttons, tabs, layer rows and sliders are sized for fingers (40–44 px). Canvas handles have a larger hit area for touch (22 px against 9 px for a mouse).
+  - Landscape phones use the side-panel layout, the same as a desktop.
+  - The header is one row that scrolls sideways. The tool bar scrolls sideways too, so every tool stays reachable.
+  - Safe areas: the header, the toast and the zoom bar respect the notch and the home indicator.
+  - iPhone home-screen support: an apple-touch-icon and the web-app meta tags, so the app opens full screen after "Add to Home Screen". Icons are PNG files, because iOS ignores SVG icons.
+  - Phones and low-memory devices get a smaller preview (1536 px); exports always use full resolution.
+  - Text fields use 16 px type, so iOS does not zoom when you tap them.
+- Smart layers: Make smart puts the selected layers inside one layer. Edit contents opens those layers as a working document, with a banner and a Done button that writes the changes back. Unpack turns a smart layer back into its layers. Saving and exporting wait until you press Done. Undo works inside the edit, and the whole edit is one undo step in the parent document.
+- Interface: icons on the header and tools, a floating zoom bar, toast messages for status, a spinner during merge, rasterise and save, coloured slider fills, card sections, a dot-grid canvas, and a one-row header on phones that scrolls sideways.
+- Edge fill for Expand: choose Extend edges to stretch the photo's outer pixels into the new area, instead of a solid colour.
+- Heal (Retouch): Clone brush with the Heal option. Heal copies the source and adjusts it to the lighting around the target, so a dark source doesn't leave a dark patch on a light area.
+- Rotation for shape and text layers: drag the rotate handle, or set the angle on the layer.
+- Rasterise: turns one shape, text, or retouch layer into an image layer, keeping its appearance, mask, and styles.
+- Bevel and emboss: a light band along the top-left inside edges and a shade along the bottom-right.
+- Pattern overlay: dots or diagonal stripes, with size, opacity, and colour.
+- Pinch to zoom on touch screens: two fingers spread to zoom in and pinch together to zoom out. A second finger cancels a drag in progress.
+- Custom looks: Save tune as look stores the selected layer's tune under a name in this browser (a separate store in IndexedDB). Apply sets it on the selected layers, and Delete removes it. Saved looks survive reloads.
+- Merge down: merges the selected layer into the one beneath it, baking in its tune, masks and styles. The lower layer's blend mode and opacity carry over to the result. Undo restores both layers. This also rasterises shape and text layers when merged with a layer below.
+- Shape and text handles: the Move tool drags shape and text layers, and a corner drag resizes them (shapes change width and height; text changes its size). Shape and text layers don't rotate yet.
+- New layer types: shape layers (rectangle, ellipse, line, with fill, stroke, and size) and text layers (words, size, colour, font, bold). Position uses the X and Y sliders.
+- Double exposure: adds a photo in screen blend at 60% opacity.
+- Lens blur: blurs what lies beneath, leaving a focus area sharp. Set the focus position, focus size, and blur amount.
+- Noise reduction (Effects, Details): softens fine noise on adjustment layers.
+- Looks: Sepia, Cross process, and Film, alongside Warm, Cool, Matte, Black & white, and Vivid.
+- Layer styles: inner shadow and gradient overlay, alongside shadow, glow, stroke, and colour overlay.
+- Drag a layer row to reorder layers.
+- Layer thumbnails: each row shows its image, or a colour swatch for shape, text, and adjustment layers.
 - On-canvas tools (the toolbar on the photo, or V, M, C, S):
   - Select (V): the default. Mask, clone and tap-to-place tools still work.
   - Move (M): drag an image layer to move it, drag a corner to scale from its centre, drag the handle above it to rotate. Hold Shift while rotating to snap to 15°. Drag near the document centre to snap to it (a magenta guide shows). Arrow keys nudge one pixel, or 10 with Shift. Each drag is one undo step.
@@ -146,21 +182,14 @@ Serve the folder over HTTP (the service worker needs http://localhost or HTTPS):
 - Installable PWA. The service worker caches the app shell cache-first.
 
 ## Not yet built
-- Text and shape layers (rectangle, ellipse, line, polygon). Rasterise.
-- Groups, drag-to-reorder, merge down.
-- Mask edit is in document space: geometry (crop, frame, expand) is hidden while editing masks.
-- Custom gradient angle and centre. Gradients are top-to-bottom and centre-out.
-- Healing (lighting and texture matching). Clone is built; Healing is not.
-- Double Exposure, Lens Blur, Text, Expand's generated fill, the Details noise reduction, and the filters beyond Black & white.
-- On-canvas perspective handles. Perspective is set with sliders (this is the one canvas control still missing).
-- Clone source marker on the canvas.
-- Worker or OffscreenCanvas processing. Everything runs on the main thread.
-- Tiled export above the GPU texture limit. The app warns above about 16 MP and does not tile.
-- Batch apply, pinch and rotate gestures, and further keyboard shortcuts.
-- Worker or OffscreenCanvas processing for curves, sharpen, and tune. Only the histogram runs in a worker.
-- Measured frame timings. The efficiency work is verified by counters, not by benchmarks.
-- HEIC decoding. The app detects HEIC and asks you to convert it.
-- PIN lock.
+- HEIC decoding. It needs a decoder library, which can't be fetched in this build environment. The app detects HEIC and asks you to convert it.
+- Batch apply across several photos. The app works on one open document at a time, so batch apply needs a multi-document model first.
+- Tiled export above the GPU texture limit. The app warns above about 16 MP and does not tile. Tiling needs the render pipeline to work region by region.
+- Worker or OffscreenCanvas processing for the heavy filters (curves, sharpen, noise reduction). Only the histogram runs in a worker. The render pipeline is synchronous, so moving these needs an async render first.
+- Smart objects (layers linked to an external source that can be edited and updated). This needs a source-linked layer model.
+- Nested groups and group blend modes. Groups are selection tags only. Smart layers can contain other layers, but groups still don't composite as a unit.
+- Satin and pattern styles beyond dots and stripes.
+- PIN lock (deliberately excluded).
 
 ## Known limits of the model
 - Blending is done in the browser's compositing space (sRGB), not in linear light. Only the tune step is linear.
