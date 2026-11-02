@@ -1,4 +1,4 @@
-const CACHE = 'edit-it-2.0.0';
+const CACHE = 'edit-it-2.0.1';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'hist-worker.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))));
 self.addEventListener('activate', e => e.waitUntil(

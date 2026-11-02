@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1
+
+- Fixed: the clipping overlay and other pixel readbacks (clipping, curves, sharpen, heal, auto tone, histogram) now use canvases created with `willReadFrequently`. Chrome was copying those canvases from the GPU on every render and logged a performance warning.
+- Added a console test that fails on that warning, so it can't come back unnoticed.
+- Known: each tuned layer still copies its result from the GPU to the 2D canvas (`GPU stall due to ReadPixels` in Chrome's console). Keeping the whole composite on the GPU is planned.
+- Note: "Unchecked runtime.lastError: The message port closed" comes from a browser extension, not from the app.
+
 ## 2.0.0
 
 First full release of edit-it: a browser photo editor that runs entirely on the device.

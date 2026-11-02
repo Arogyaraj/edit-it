@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 const SLIDERS = ['brightness', 'contrast', 'saturation', 'warmth', 'highlights', 'shadows'];
 const LABEL = { brightness: 'Brightness', contrast: 'Contrast', saturation: 'Saturation', warmth: 'Warmth', highlights: 'Highlights', shadows: 'Shadows' };
 // Phones and low-memory devices get a smaller preview; export always uses full resolution.
@@ -44,7 +44,13 @@ const say = msg => {
 };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const canvasOf = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
-const copyCanvas = src => { const c = canvasOf(src.width, src.height); c.getContext('2d').drawImage(src, 0, 0); return c; };
+// Canvases whose pixels are read back (getImageData) get willReadFrequently, so the browser keeps them on the CPU.
+const readCtx = c => c.getContext('2d', { willReadFrequently: true });
+const copyCanvas = (src, read = false) => {
+  const c = canvasOf(src.width, src.height);
+  (read ? readCtx(c) : c.getContext('2d')).drawImage(src, 0, 0);
+  return c;
+};
 const sel = () => state.layers.find(L => L.id === state.selectedId) || null;
 const snap = () => clone({ layers: state.layers, geo: state.geo });
 state.history = [{ ...snap(), label: 'Start' }];
@@ -203,7 +209,7 @@ function perspectiveCanvas(src, p) {
   const Q = [[p.tl[0] * W, p.tl[1] * H], [W + p.tr[0] * W, p.tr[1] * H],
              [W + p.br[0] * W, H + p.br[1] * H], [p.bl[0] * W, H + p.bl[1] * H]];
   const h = solveHomography(P, Q);
-  const s = src.getContext('2d').getImageData(0, 0, W, H).data;
+  const s = readCtx(src).getImageData(0, 0, W, H).data;
   const out = canvasOf(W, H), oc = out.getContext('2d');
   const img = oc.createImageData(W, H), d = img.data;
   for (let y = 0; y < H; y++) {
@@ -250,8 +256,8 @@ function stampClone(s, x, y) {
 function prepHeal(s) {
   s.heal = true;
   s.W = s.below.width; s.H = s.below.height;
-  s.data = s.below.getContext('2d').getImageData(0, 0, s.W, s.H).data;
-  const bl = canvasOf(s.W, s.H), bc = bl.getContext('2d');
+  s.data = readCtx(s.below).getImageData(0, 0, s.W, s.H).data;
+  const bl = canvasOf(s.W, s.H), bc = readCtx(bl);
   bc.filter = `blur(${Math.max(3, s.size / 3)}px)`;
   bc.drawImage(s.below, 0, 0);
   bc.filter = 'none';
@@ -553,7 +559,7 @@ function buildLut(ys) {
   return lut;
 }
 function applyCurve(src, ys) {
-  const lut = buildLut(ys), out = copyCanvas(src), ctx = out.getContext('2d');
+  const lut = buildLut(ys), out = copyCanvas(src, true), ctx = readCtx(out);
   const img = ctx.getImageData(0, 0, out.width, out.height), d = img.data;
   for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
   ctx.putImageData(img, 0, 0);
@@ -561,11 +567,11 @@ function applyCurve(src, ys) {
 }
 // Unsharp mask: out = src + k * (src - blurred). Flat areas are unchanged by construction.
 function applySharpen(src, amt) {
-  const blur = canvasOf(src.width, src.height), bc = blur.getContext('2d');
+  const blur = canvasOf(src.width, src.height), bc = readCtx(blur);
   bc.filter = 'blur(2px)';
   bc.drawImage(src, 0, 0);
   bc.filter = 'none';
-  const out = copyCanvas(src), ctx = out.getContext('2d');
+  const out = copyCanvas(src, true), ctx = readCtx(out);
   const a = ctx.getImageData(0, 0, out.width, out.height), b = bc.getImageData(0, 0, out.width, out.height);
   const k = amt / 100 * 1.5, d = a.data, e = b.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -794,7 +800,7 @@ function renderNow(raw = false) {
   const out = compose(composite(false, raw), useDefault ? defaultGeo() : state.geo, baseMode);
   const v = $('view');
   v.width = out.width; v.height = out.height;
-  v.getContext('2d').drawImage(out, 0, 0);
+  readCtx(v).drawImage(out, 0, 0);
   updateHistogram();
   if (state.clip) clipOverlay(v);
   layoutCanvas();
@@ -826,7 +832,7 @@ function updateHistogram() {
   if (!histWorker || !state.doc) return;
   if (histBusy) { histRerun = true; return; }
   const v = $('view'), w = Math.min(256, v.width), h = Math.max(1, Math.round(v.height * w / v.width));
-  const small = canvasOf(w, h), sc = small.getContext('2d');
+  const small = canvasOf(w, h), sc = readCtx(small);
   sc.drawImage(v, 0, 0, w, h);
   const buf = sc.getImageData(0, 0, w, h).data.buffer;
   histBusy = true;
@@ -862,7 +868,7 @@ function drawHistogram(bins) {
 
 // Clipping warning: highlights with any channel at 254+ turn red, shadows with all channels at 1 or less turn blue.
 function clipOverlay(v) {
-  const ctx = v.getContext('2d'), img = ctx.getImageData(0, 0, v.width, v.height), d = img.data;
+  const ctx = readCtx(v), img = ctx.getImageData(0, 0, v.width, v.height), d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     if (d[i] >= 254 || d[i + 1] >= 254 || d[i + 2] >= 254) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 0; }
     else if (d[i] <= 1 && d[i + 1] <= 1 && d[i + 2] <= 1) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 255; }
@@ -881,7 +887,7 @@ function autoTone() {
   if (!ts.length) { say('Select an unlocked layer to tone.'); return; }
   render(true);
   const v = $('view'), w = Math.min(256, v.width), h = Math.max(1, Math.round(v.height * w / v.width));
-  const c = canvasOf(w, h), x = c.getContext('2d');
+  const c = canvasOf(w, h), x = readCtx(c);
   x.drawImage(v, 0, 0, w, h);
   const d = x.getImageData(0, 0, w, h).data, bins = new Uint32Array(256);
   for (let i = 0; i < d.length; i += 4) bins[Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2])]++;
@@ -1968,8 +1974,8 @@ view.addEventListener('pointerdown', e => {
     if (L.type !== 'paint') { say('Select a retouch layer first.'); return; }
     if (!state.cloneSrc) { say('Set a clone source first.'); return; }
     const below = composite(false, false, L);
-    const c = copyCanvas(state.masks.get(L.paint));
-    stroke = { kind: 'clone', layerId: L.id, canvas: c, ctx: c.getContext('2d'), size: +$('brush-size').value,
+    const c = copyCanvas(state.masks.get(L.paint), true);
+    stroke = { kind: 'clone', layerId: L.id, canvas: c, ctx: readCtx(c), size: +$('brush-size').value,
       hard: +$('brush-hard').value, erase: false, lx: pt.x, ly: pt.y, below,
       tmp: canvasOf(state.doc.w, state.doc.h),
       delta: { x: state.cloneSrc.x - pt.x, y: state.cloneSrc.y - pt.y } };
