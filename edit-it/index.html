@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>edit-it</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="edit-it">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo"></span><strong>edit-it</strong></div>
+  <button id="btn-open">Open</button>
+  <button id="zoom-toggle" title="Toggle 100% zoom">100%</button>
+  <button id="btn-undo" disabled>Undo</button>
+  <button id="btn-redo" disabled>Redo</button>
+  <button id="before" title="Hold to see the original">Before</button>
+  <select id="project-select"><option value="">Saved projects</option></select>
+  <button id="btn-load">Load</button>
+  <button id="project-delete" title="Delete the selected saved project">Delete</button>
+  <button id="btn-save" class="primary">Save</button>
+  <button id="btn-export-jpeg">JPEG</button>
+  <label class="quality" title="JPEG quality">Q <input type="range" id="export-quality" min="50" max="100" value="92"></label>
+  <button id="btn-export-png" class="primary">Export PNG</button>
+  <button id="clip-toggle" aria-pressed="false" title="Show clipped highlights and shadows (J)">Clipping</button>
+  <div class="more-wrap">
+    <button id="more-btn" class="more-btn" aria-expanded="false" aria-controls="more-menu" title="More actions">•••</button>
+    <div id="more-menu" class="more-menu">
+      <button id="btn-reset">Reset all</button>
+      <button id="help-btn" title="Keyboard shortcuts (?)">Help</button>
+    </div>
+  </div>
+  <button id="sheet-toggle" aria-expanded="true" title="Show or hide the panel">Hide panel</button>
+</header>
+<main id="stage">
+  <div id="smart-banner" class="smart-banner" hidden>
+    <span id="smart-banner-text">Editing</span>
+    <button id="smart-done" class="primary">Done</button>
+  </div>
+  <div class="zoombar" role="group" aria-label="Zoom">
+    <button id="zoom-out" class="ghost" title="Zoom out (-)" aria-label="Zoom out">−</button>
+    <div id="zoom-label" class="zoom-label" aria-live="polite">Fit</div>
+    <button id="zoom-in" class="ghost" title="Zoom in (+)" aria-label="Zoom in">+</button>
+    <button id="zoom-fit" class="ghost" title="Fit to screen (0)" aria-label="Fit to screen">⤢</button>
+  </div>
+  <div id="empty">
+    <p>Open, drop, or paste a photo.</p>
+    <p class="note">Everything stays in this browser. Nothing is uploaded to a server.</p>
+    <button id="empty-open" class="primary big">Open a photo</button>
+  </div>
+  <div id="canvas-wrap" hidden>
+    <canvas id="view" hidden></canvas>
+    <canvas id="overlay" aria-label="Canvas handles"></canvas>
+  </div>
+  <div id="tools" class="tools" role="toolbar" aria-label="Canvas tools" hidden>
+    <button id="tool-select" aria-pressed="true" title="Select (V)">Select</button>
+    <button id="tool-move" aria-pressed="false" title="Move, scale and rotate layers (M)">Move</button>
+    <button id="tool-crop" aria-pressed="false" title="Crop on the canvas (C)">Crop</button>
+    <button id="tool-perspective" aria-pressed="false" title="Drag the corners to correct perspective (P)">Perspective</button>
+  <button id="tool-straighten" aria-pressed="false" title="Drag along a horizon to straighten (S)">Straighten</button>
+  </div>
+</main>
+<section id="sheet" aria-label="Edit tools">
+  <button id="grabber" class="grabber" aria-label="Show or hide the panel"><span></span></button>
+  <div class="hist-wrap">
+    <div class="hist-head"><span>Histogram</span><button id="hist-mode" class="mini-txt" aria-pressed="false" title="Show red, green and blue">RGB</button></div>
+    <canvas id="hist" width="512" height="168" aria-label="Histogram"></canvas>
+  </div>
+  <nav class="tabs">
+    <button id="tab-tune" aria-pressed="true">Tune</button>
+    <button id="tab-geo" aria-pressed="false">Crop</button>
+    <button id="tab-layers" aria-pressed="false">Layers</button>
+    <button id="tab-history" aria-pressed="false">History</button>
+    <button id="tab-fx" aria-pressed="false">Effects</button>
+  </nav>
+  <div class="page-head">
+    <button id="page-prev" class="mini" aria-label="Previous page" title="Previous page">‹</button>
+    <div class="page-text">
+      <div id="page-title" class="page-title">Tune</div>
+      <div id="page-sub" class="page-sub"></div>
+    </div>
+    <div class="page-nav"><span id="page-count" class="muted"></span><button id="page-next" class="mini" aria-label="Next page" title="Next page">›</button></div>
+  </div>
+  <div id="panel-tune">
+    <p class="note">Tune applies to the selected layer.</p>
+    <div class="grp">
+      <button id="tune-auto" title="Set brightness and contrast from the image">Auto tone</button>
+      <button id="tune-copy">Copy tune</button>
+      <button id="tune-paste">Paste tune</button>
+    </div>
+    <div id="sliders"></div>
+  </div>
+  <div id="panel-geo" hidden>
+    <div class="grp">
+      <label class="ctl">Straighten (degrees) <input type="range" id="str-angle" min="-45" max="45" step="0.5" value="0"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Perspective (corner offsets, % of image)</span>
+      <label class="ctl">TL x <input type="range" id="per-tlx" min="-30" max="30" value="0"></label>
+      <label class="ctl">TL y <input type="range" id="per-tly" min="-30" max="30" value="0"></label>
+      <label class="ctl">TR x <input type="range" id="per-trx" min="-30" max="30" value="0"></label>
+      <label class="ctl">TR y <input type="range" id="per-try" min="-30" max="30" value="0"></label>
+      <label class="ctl">BR x <input type="range" id="per-brx" min="-30" max="30" value="0"></label>
+      <label class="ctl">BR y <input type="range" id="per-bry" min="-30" max="30" value="0"></label>
+      <label class="ctl">BL x <input type="range" id="per-blx" min="-30" max="30" value="0"></label>
+      <label class="ctl">BL y <input type="range" id="per-bly" min="-30" max="30" value="0"></label>
+    </div>
+    <div class="grp">
+      <button id="rot-l">Rotate left</button>
+      <button id="rot-r">Rotate right</button>
+      <button id="flip-h">Flip H</button>
+      <button id="flip-v">Flip V</button>
+      <button id="geo-reset">Reset geometry</button>
+    </div>
+    <div class="grp">
+      <label class="ctl">Aspect
+        <select id="aspect">
+          <option value="free">Free</option>
+          <option value="original">Original</option>
+          <option value="1:1">1:1</option>
+          <option value="4:5">4:5</option>
+          <option value="3:2">3:2</option>
+          <option value="16:9">16:9</option>
+        </select>
+      </label>
+    </div>
+    <div class="grp">
+      <span class="head">Crop (% of image)</span>
+      <label class="ctl">X <input type="range" id="c-x" min="0" max="100" value="0"></label>
+      <label class="ctl">Y <input type="range" id="c-y" min="0" max="100" value="0"></label>
+      <label class="ctl">Width <input type="range" id="c-w" min="5" max="100" value="100"></label>
+      <label class="ctl">Height <input type="range" id="c-h" min="5" max="100" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Expand (% per side, solid fill)</span>
+      <label class="ctl">Top <input type="range" id="e-t" min="0" max="50" value="0"></label>
+      <label class="ctl">Bottom <input type="range" id="e-b" min="0" max="50" value="0"></label>
+      <label class="ctl">Left <input type="range" id="e-l" min="0" max="50" value="0"></label>
+      <label class="ctl">Right <input type="range" id="e-r" min="0" max="50" value="0"></label>
+      <label class="ctl">Fill <input type="color" id="e-color" value="#ffffff"></label>
+      <label class="ctl">Edge fill
+        <select id="e-mode" title="Solid colour, or stretch the photo's edges into the new area">
+          <option value="solid">Solid</option>
+          <option value="edge">Extend edges</option>
+        </select>
+      </label>
+    </div>
+    <div class="grp">
+      <span class="head">Frame</span>
+      <label class="ctl">Style
+        <select id="frame-type">
+          <option value="none">None</option>
+          <option value="solid">Solid</option>
+          <option value="polaroid">Polaroid</option>
+        </select>
+      </label>
+      <label class="ctl">Width <input type="range" id="frame-width" min="1" max="15" value="5"></label>
+      <label class="ctl">Colour <input type="color" id="frame-color" value="#ffffff"></label>
+    </div>
+  </div>
+  <div id="panel-layers" hidden>
+    <div class="grp">
+      <button id="lay-add-image">Add image</button>
+      <button id="lay-add-adjust">Add adjustment</button>
+      <button id="lay-up">Move up</button>
+      <button id="lay-down">Move down</button>
+      <button id="lay-dup">Duplicate</button>
+      <button id="lay-del">Delete</button>
+    </div>
+    <div id="layer-list" class="list"></div>
+    <div class="grp">
+      <label class="ctl">Name <input type="text" id="lay-name" maxlength="60"></label>
+      <label class="ctl"><input type="checkbox" id="lay-visible"> Visible</label>
+      <label class="ctl"><input type="checkbox" id="lay-lock"> Locked</label>
+      <label class="ctl">Blend
+        <select id="lay-blend">
+          <option value="normal">Normal</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+          <option value="soft-light">Soft light</option>
+          <option value="hard-light">Hard light</option>
+          <option value="color-dodge">Colour dodge</option>
+          <option value="color-burn">Colour burn</option>
+          <option value="difference">Difference</option>
+          <option value="exclusion">Exclusion</option>
+          <option value="hue">Hue</option>
+          <option value="saturation">Saturation</option>
+          <option value="color">Colour</option>
+          <option value="luminosity">Luminosity</option>
+        </select>
+      </label>
+      <label class="ctl">Opacity <input type="range" id="lay-opacity" min="0" max="100" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Position and size (image layers; % of document)</span>
+      <label class="ctl">X <input type="range" id="lay-x" min="-100" max="100" value="0"></label>
+      <label class="ctl">Y <input type="range" id="lay-y" min="-100" max="100" value="0"></label>
+      <label class="ctl">Scale <input type="range" id="lay-scale" min="5" max="300" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Add more</span>
+      <button id="lay-add-shape">Add shape</button>
+      <select id="shape-kind" title="Shape kind"><option value="rect">Rectangle</option><option value="ellipse">Ellipse</option><option value="line">Line</option></select>
+      <button id="lay-add-text">Add text</button>
+      <button id="exp-double" title="Add a photo as a double exposure">Double exposure</button>
+    </div>
+    <div class="grp">
+      <span class="head">Smart layer</span>
+      <button id="lay-make-smart" title="Group the selected layers into one smart layer">Make smart</button>
+      <button id="smart-edit" title="Open the smart layer's contents to edit them">Edit contents</button>
+      <button id="smart-unpack" title="Turn the smart layer back into its layers">Unpack</button>
+    </div>
+    <div class="grp">
+      <span class="head">Shape (selected shape layer)</span>
+      <label class="ctl">Fill <input type="color" id="shape-fill" value="#8fb0ff"></label>
+      <label class="ctl">Stroke <input type="color" id="shape-stroke" value="#ffffff"></label>
+      <label class="ctl">Line <input type="range" id="shape-width" min="0" max="20" value="0"></label>
+      <label class="ctl">Width <input type="range" id="shape-w" min="2" max="100" value="40"></label>
+      <label class="ctl">Height <input type="range" id="shape-h" min="2" max="100" value="30"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Text (selected text layer)</span>
+      <label class="ctl">Words <input type="text" id="text-content" value="Hello"></label>
+      <label class="ctl">Size <input type="range" id="text-size" min="2" max="30" value="10"></label>
+      <label class="ctl">Colour <input type="color" id="text-color" value="#ffffff"></label>
+      <label class="ctl">Font <select id="text-font"><option value="sans">Sans</option><option value="serif">Serif</option><option value="mono">Mono</option></select></label>
+      <label class="ctl"><input type="checkbox" id="text-bold"> Bold</label>
+    </div>
+    <div class="grp">
+      <button id="lay-group">Group</button>
+      <button id="lay-ungroup">Ungroup</button>
+      <button id="lay-merge" title="Merge the selected layer into the one below">Merge down</button>
+      <button id="lay-rasterize" title="Turn a shape, text or retouch layer into an image">Rasterise</button>
+      <span class="muted">Ctrl/Cmd-click or Shift-click to select several layers. Ctrl+A selects all.</span>
+    </div>
+    <div class="grp">
+      <span class="head">Layer style (image and retouch layers)</span>
+      <label class="ctl"><input type="checkbox" id="fx-shadow-on"> Drop shadow</label>
+      <label class="ctl">Blur <input type="range" id="fx-shadow-blur" min="0" max="40" value="8"></label>
+      <label class="ctl">Distance <input type="range" id="fx-shadow-dist" min="0" max="60" value="10"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-shadow-opacity" min="0" max="100" value="60"></label>
+      <label class="ctl">Colour <input type="color" id="fx-shadow-color" value="#000000"></label>
+      <label class="ctl"><input type="checkbox" id="fx-glow-on"> Outer glow</label>
+      <label class="ctl">Blur <input type="range" id="fx-glow-blur" min="0" max="60" value="16"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-glow-opacity" min="0" max="100" value="60"></label>
+      <label class="ctl">Colour <input type="color" id="fx-glow-color" value="#8fb0ff"></label>
+      <label class="ctl"><input type="checkbox" id="fx-stroke-on"> Stroke</label>
+      <label class="ctl">Width <input type="range" id="fx-stroke-width" min="1" max="20" value="3"></label>
+      <label class="ctl">Colour <input type="color" id="fx-stroke-color" value="#ffffff"></label>
+      <label class="ctl"><input type="checkbox" id="fx-over-on"> Colour overlay</label>
+      <label class="ctl">Opacity <input type="range" id="fx-over-opacity" min="0" max="100" value="40"></label>
+      <label class="ctl">Colour <input type="color" id="fx-over-color" value="#8fb0ff"></label>
+      <label class="ctl"><input type="checkbox" id="fx-inner-on"> Inner shadow</label>
+      <label class="ctl">Blur <input type="range" id="fx-inner-blur" min="0" max="30" value="6"></label>
+      <label class="ctl">Distance <input type="range" id="fx-inner-dist" min="0" max="40" value="6"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-inner-opacity" min="0" max="100" value="70"></label>
+      <label class="ctl">Colour <input type="color" id="fx-inner-color" value="#000000"></label>
+      <label class="ctl"><input type="checkbox" id="fx-grad-on"> Gradient overlay</label>
+      <label class="ctl">From <input type="color" id="fx-grad-from" value="#000000"></label>
+      <label class="ctl">To <input type="color" id="fx-grad-to" value="#ffffff"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-grad-opacity" min="0" max="100" value="60"></label>
+      <label class="ctl">Angle <input type="range" id="fx-grad-angle" min="0" max="360" value="90"></label>
+      <label class="ctl"><input type="checkbox" id="fx-bevel-on"> Bevel and emboss</label>
+      <label class="ctl">Depth <input type="range" id="fx-bevel-dist" min="0" max="20" value="4"></label>
+      <label class="ctl">Softness <input type="range" id="fx-bevel-blur" min="0" max="20" value="2"></label>
+      <label class="ctl"><input type="checkbox" id="fx-pat-on"> Pattern overlay</label>
+      <select id="fx-pat-kind"><option value="dots">Dots</option><option value="stripes">Stripes</option></select>
+      <label class="ctl">Size <input type="range" id="fx-pat-scale" min="2" max="30" value="8"></label>
+      <label class="ctl">Opacity <input type="range" id="fx-pat-opacity" min="0" max="100" value="80"></label>
+      <label class="ctl">Colour <input type="color" id="fx-pat-color" value="#000000"></label>
+    </div>
+    <div class="grp">
+      <button id="fx-copy">Copy style</button>
+      <button id="fx-paste">Paste style</button>
+      <button id="fx-clear">Clear style</button>
+    </div>
+    <div class="grp">
+      <span class="head">Mask</span>
+      <button id="mask-add">Add mask</button>
+      <button id="mask-remove">Remove mask</button>
+      <button id="mask-linear">Linear gradient</button>
+      <button id="mask-radial">Radial gradient</button>
+      <button id="mask-edit" aria-pressed="false">Edit mask</button>
+      <label class="ctl"><input type="checkbox" id="lay-mask-invert"> Invert</label>
+    </div>
+    <div class="grp">
+      <span class="head">Mask brush (edit mode; [ and ] change size)</span>
+      <label class="ctl">Size <input type="range" id="brush-size" min="1" max="400" value="60"></label>
+      <label class="ctl">Hardness <input type="range" id="brush-hard" min="0" max="100" value="50"></label>
+      <label class="ctl">Mode
+        <select id="brush-mode">
+          <option value="paint">Paint (reveal)</option>
+          <option value="erase">Erase (hide)</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div id="panel-fx" hidden>
+    <div class="grp">
+      <span class="head">My looks (saved in this browser)</span>
+      <label class="ctl">Name <input type="text" id="look-name" value="My look" style="width:120px"></label>
+      <button id="look-save">Save tune as look</button>
+      <select id="look-list" title="Saved looks"><option value="">No saved looks</option></select>
+      <button id="look-apply">Apply</button>
+      <button id="look-delete">Delete</button>
+    </div>
+    <div class="grp">
+      <span class="head">Lens blur (blurs what lies beneath, away from the focus)</span>
+      <button id="fx-lensblur">Add lens blur</button>
+      <label class="ctl">Focus X <input type="range" id="lb-x" min="0" max="100" value="50"></label>
+      <label class="ctl">Focus Y <input type="range" id="lb-y" min="0" max="100" value="50"></label>
+      <label class="ctl">Focus size <input type="range" id="lb-radius" min="5" max="90" value="20"></label>
+      <label class="ctl">Blur <input type="range" id="lb-amount" min="0" max="20" value="6"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Retouch: clone (healing is not built yet)</span>
+      <button id="retouch-add">Add retouch layer</button>
+      <button id="retouch-src">Set source</button>
+      <button id="retouch-paint" aria-pressed="false">Clone brush</button>
+      <select id="retouch-kind" title="Clone copies exactly; heal matches the lighting around the target">
+        <option value="clone">Clone</option>
+        <option value="heal">Heal</option>
+      </select>
+    </div>
+    <div class="grp">
+      <button id="fx-vignette">Add vignette</button>
+      <button id="fx-selective" aria-pressed="false">Selective: tap image to place</button>
+      <label class="ctl">Radius <input type="range" id="sel-radius" min="2" max="80" value="20"></label>
+      <label class="ctl">Feather <input type="range" id="sel-feather" min="0" max="100" value="50"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Looks (sets the selected layer's tune)</span>
+      <button id="look-warm">Warm</button>
+      <button id="look-cool">Cool</button>
+      <button id="look-matte">Matte</button>
+      <button id="look-bw">Black &amp; white</button>
+      <button id="look-vivid">Vivid</button>
+      <button id="look-sepia">Sepia</button>
+      <button id="look-cross">Cross process</button>
+      <button id="look-film">Film</button>
+    </div>
+    <div class="grp">
+      <span class="head">Curves (adjustment layers: shadows left, highlights right)</span>
+      <label class="ctl">0 <input type="range" id="curve-0" min="0" max="100" value="0"></label>
+      <label class="ctl">25 <input type="range" id="curve-1" min="0" max="100" value="25"></label>
+      <label class="ctl">50 <input type="range" id="curve-2" min="0" max="100" value="50"></label>
+      <label class="ctl">75 <input type="range" id="curve-3" min="0" max="100" value="75"></label>
+      <label class="ctl">100 <input type="range" id="curve-4" min="0" max="100" value="100"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Details (adjustment layers; sharpen flat areas stay unchanged)</span>
+      <label class="ctl">Sharpen <input type="range" id="det-sharpen" min="0" max="100" value="0"></label>
+      <label class="ctl">Noise reduction <input type="range" id="det-denoise" min="0" max="100" value="0"></label>
+    </div>
+    <div class="grp">
+      <span class="head">Vignette (selected vignette layer)</span>
+      <label class="ctl">Strength <input type="range" id="vig-strength" min="0" max="100" value="60"></label>
+      <label class="ctl">Clear radius <input type="range" id="vig-radius" min="5" max="100" value="60"></label>
+      <label class="ctl">Centre X <input type="range" id="vig-x" min="0" max="100" value="50"></label>
+      <label class="ctl">Centre Y <input type="range" id="vig-y" min="0" max="100" value="50"></label>
+    </div>
+  </div>
+  <div id="panel-history" hidden>
+    <p class="note">Click a step to jump to it. Undo and redo move through the same list.</p>
+    <div id="history-list" class="list"></div>
+  </div>
+</section>
+<p id="status" role="status"></p>
+<input type="file" id="file-input" accept="image/*,.heic,.heif" hidden>
+<input type="file" id="add-input" accept="image/*,.heic,.heif" hidden>
+<dialog id="help" aria-labelledby="help-title">
+  <div class="help-head">
+    <h2 id="help-title">Help &amp; shortcuts</h2>
+    <button id="help-close" class="primary">Close</button>
+  </div>
+  <div class="help-body">
+    <section>
+      <h3>Getting started</h3>
+      <ul>
+        <li>Open a photo with Open, drag it onto the page, or paste it. Dropping or pasting while a photo is open adds it as a layer.</li>
+        <li>Your original is never changed. Every edit is a layer or a step you can undo.</li>
+        <li>Projects save to this browser about every three seconds. Save (Ctrl/Cmd+S) saves now.</li>
+        <li>Export PNG or JPEG at full resolution. Ctrl/Cmd+E exports PNG.</li>
+        <li>Nothing leaves your device. Everything stays in this browser.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Canvas tools</h3>
+      <p>Use the toolbar on the photo, or the keys in brackets.</p>
+      <ul>
+        <li><strong>Select</strong> (V): the default. Click a layer in the Layers tab to choose it.</li>
+        <li><strong>Move</strong> (M): drag an image layer to move it. Drag a corner to scale it, or the handle above it to rotate. Hold Shift while rotating to snap to 15°. Drag near the centre to snap to it.</li>
+        <li><strong>Crop</strong> (C): drag the corners or edges, or drag inside to move the crop. Aspect presets hold their ratio.</li>
+        <li><strong>Straighten</strong> (S): drag along a horizon. The slope sets the angle, up to ±45°.</li>
+        <li><strong>Clipping</strong> (J): shows blown highlights in red and crushed shadows in blue.</li>
+        <li><strong>Before</strong>: hold the Before button, or press \ to toggle the original.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Adjusting the picture</h3>
+      <ul>
+        <li><strong>Tune</strong>: brightness, contrast, saturation, warmth, highlights and shadows. Sliders change every selected layer. Double-click a slider to reset it.</li>
+        <li><strong>Auto tone</strong> sets brightness and contrast from the image. Copy tune and Paste tune move settings between layers.</li>
+        <li><strong>Crop &amp; frame</strong>: rotate, flip, straighten, correct perspective, set an aspect ratio, expand the canvas with a solid fill, and add a solid or Polaroid frame.</li>
+        <li><strong>Effects</strong>: Vignette, Curves (five points), Details sharpen, Selective (set the radius and feather, then tap the photo), Looks (presets that replace the layer's tune), and Retouch clone (set a source, then paint with the clone brush).</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Layers</h3>
+      <ul>
+        <li>Add an image, an adjustment layer, or a retouch layer.</li>
+        <li>Select several layers with Ctrl/Cmd-click, or a range with Shift-click. Ctrl+A selects all. Edits apply to the whole selection.</li>
+        <li>Group selected layers. Clicking one member selects the group.</li>
+        <li>Each layer has a name, visibility, lock, opacity, blend mode, and position and scale for image layers.</li>
+        <li><strong>Layer style</strong>: drop shadow, outer glow, stroke and colour overlay. Copy style and Paste style move them between layers.</li>
+        <li><strong>Mask</strong>: add a mask, or use a linear or radial gradient. Edit mask paints (reveal) or erases (hide). Invert flips it.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Keyboard shortcuts</h3>
+      <dl class="keys">
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Undo</dd>
+        <dt>Shift + <kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Redo</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>S</kbd></dt><dd>Save project</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>E</kbd></dt><dd>Export PNG</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>A</kbd></dt><dd>Select all layers</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd> + <kbd>D</kbd></dt><dd>Duplicate selected layers</dd>
+        <dt><kbd>Delete</kbd> or <kbd>Backspace</kbd></dt><dd>Delete selected layers</dd>
+        <dt><kbd>Ctrl</kbd> / <kbd>⌘</kbd>-click</dt><dd>Add a layer to the selection, or remove it</dd>
+        <dt><kbd>Shift</kbd>-click</dt><dd>Select a range of layers</dd>
+        <dt><kbd>V</kbd> <kbd>M</kbd> <kbd>C</kbd> <kbd>S</kbd></dt><dd>Select, Move, Crop, Straighten tools</dd>
+        <dt><kbd>J</kbd></dt><dd>Toggle the clipping warning</dd>
+        <dt><kbd>\</kbd></dt><dd>Toggle before and after</dd>
+        <dt><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></dt><dd>Nudge the layer one pixel (Move tool)</dd>
+        <dt>Shift + arrow</dt><dd>Nudge ten pixels (Move tool)</dd>
+        <dt><kbd>[</kbd> and <kbd>]</kbd></dt><dd>Smaller and larger mask brush (mask edit)</dd>
+        <dt><kbd>?</kbd></dt><dd>Open this help</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h3>Tips</h3>
+      <ul>
+        <li>For Selective, set the radius and feather before you tap the photo.</li>
+        <li>Clone copies what is beneath the retouch layer. Set the source first, then turn on the clone brush.</li>
+        <li>Looks replace the layer's tune values. Auto tone and sliders can refine them afterwards.</li>
+        <li>Safari shows shadows and glows without blur in older versions. Newer versions match Chrome.</li>
+        <li>HEIC photos don't open in most desktop browsers. Convert them to JPEG or PNG first.</li>
+      </ul>
+    </section>
+    <p class="note" id="app-version"></p>
+  </div>
+</dialog>
+<script src="app.js"></script>
+</body>
+</html>
