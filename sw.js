@@ -1,5 +1,5 @@
-const CACHE = 'edit-it-2.0.1';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'hist-worker.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+const CACHE = 'edit-it-2.1.0';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'hist-worker.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'vendor/libheif/heic-decode.js'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))));
 self.addEventListener('activate', e => e.waitUntil(
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))));

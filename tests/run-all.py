@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SUITES = [
     'browser-tests.py', 'layers-tests.py', 'canvas-tests.py', 'polish-tests.py', 'extras-tests.py',
     'ui-tests.py', 'ui-polish-tests.py', 'tools-tests.py', 'features-tests.py', 'next-tests.py',
-    'hard-tests.py', 'smart-tests.py', 'pinch-tests.py', 'mobile-tests.py', 'console-tests.py',
+    'hard-tests.py', 'smart-tests.py', 'pinch-tests.py', 'mobile-tests.py', 'console-tests.py', 'readback-tests.py', 'formats-tests.py',
 ]
 
 def main():

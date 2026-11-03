@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.1.0';
 const SLIDERS = ['brightness', 'contrast', 'saturation', 'warmth', 'highlights', 'shadows'];
 const LABEL = { brightness: 'Brightness', contrast: 'Contrast', saturation: 'Saturation', warmth: 'Warmth', highlights: 'Highlights', shadows: 'Shadows' };
 // Phones and low-memory devices get a smaller preview; export always uses full resolution.
@@ -83,7 +83,8 @@ void main(){
 }`;
 
 function makeGL(canvas) {
-  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+  // The result is copied out in the same task it is drawn, so the drawing buffer need not be preserved.
+  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: false });
   if (!gl) return null;
   const compile = (type, src) => {
     const sh = gl.createShader(type);
@@ -128,8 +129,10 @@ state.gl = makeGL(state.glCanvas);
 // Runs the tune shader on a canvas or bitmap, returning a new canvas (or src itself when there is nothing to do).
 function tuned(src, p) {
   if (!p || !state.gl || !SLIDERS.some(k => p[k])) return src;
-  state.glCanvas.width = src.width;
-  state.glCanvas.height = src.height;
+  if (state.glCanvas.width !== src.width || state.glCanvas.height !== src.height) {
+    state.glCanvas.width = src.width;
+    state.glCanvas.height = src.height;
+  }
   state.gl.setImage(src);
   state.gl.draw(p);
   state.stats.glDraws++;
@@ -800,7 +803,7 @@ function renderNow(raw = false) {
   const out = compose(composite(false, raw), useDefault ? defaultGeo() : state.geo, baseMode);
   const v = $('view');
   v.width = out.width; v.height = out.height;
-  readCtx(v).drawImage(out, 0, 0);
+  v.getContext('2d').drawImage(out, 0, 0);
   updateHistogram();
   if (state.clip) clipOverlay(v);
   layoutCanvas();
@@ -868,12 +871,20 @@ function drawHistogram(bins) {
 
 // Clipping warning: highlights with any channel at 254+ turn red, shadows with all channels at 1 or less turn blue.
 function clipOverlay(v) {
-  const ctx = readCtx(v), img = ctx.getImageData(0, 0, v.width, v.height), d = img.data;
+  // Read a scratch copy (only when clipping is on), then draw the marked pixels back onto the view.
+  if (!state.clipScratch || state.clipScratch.width !== v.width || state.clipScratch.height !== v.height) {
+    state.clipScratch = canvasOf(v.width, v.height);
+  }
+  const scratch = state.clipScratch, ctx = readCtx(scratch);
+  ctx.clearRect(0, 0, scratch.width, scratch.height);
+  ctx.drawImage(v, 0, 0);
+  const img = ctx.getImageData(0, 0, v.width, v.height), d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     if (d[i] >= 254 || d[i + 1] >= 254 || d[i + 2] >= 254) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 0; }
     else if (d[i] <= 1 && d[i + 1] <= 1 && d[i + 2] <= 1) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 255; }
   }
   ctx.putImageData(img, 0, 0);
+  v.getContext('2d').drawImage(scratch, 0, 0);
 }
 function toggleClip() {
   state.clip = !state.clip;
@@ -1321,8 +1332,73 @@ function placeSelective(pt) {
 }
 
 // ---------- Decoding and documents ----------
-async function decodeAsset(id, name, blob) {
-  const full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+// ---------- Formats: detected from the file's first bytes, so a renamed file still opens ----------
+const IMAGE_ACCEPT = 'image/*,.heic,.heif,.avif,.bmp,.gif,.webp,.ico,.svg,.tif,.tiff,.jxl,.jpg,.jpeg,.png,.apng';
+const IMAGE_EXT = /\.(jpe?g|png|apng|gif|webp|avif|bmp|ico|svg|hei[cf]|tiff?|jxl)$/i;
+const isImageFile = f => !!f && (f.type.startsWith('image/') || IMAGE_EXT.test(f.name));
+function sniffFormat(b) {
+  const at = (i, n) => String.fromCharCode(...b.slice(i, i + n));
+  if (b[0] === 0xFF && b[1] === 0xD8) return 'jpeg';
+  if (at(0, 8) === '\x89PNG\r\n\x1a\n') return 'png';
+  if (at(0, 6) === 'GIF87a' || at(0, 6) === 'GIF89a') return 'gif';
+  if (at(0, 4) === 'RIFF' && at(8, 4) === 'WEBP') return 'webp';
+  if (at(0, 2) === 'BM') return 'bmp';
+  if (at(4, 4) === 'ftyp') {
+    const brand = at(8, 4);
+    if (brand === 'avif' || brand === 'avis') return 'avif';
+    if (['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand)) return 'heic';
+  }
+  if ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2A) || (b[0] === 0x4D && b[1] === 0x4D && b[2] === 0x00)) return 'tiff';
+  if (b[0] === 0 && b[1] === 0 && b[2] === 1 && b[3] === 0) return 'ico';
+  if (at(0, 12) === '\x00\x00\x00\x0cJXL ' || (b[0] === 0xFF && b[1] === 0x0A)) return 'jxl';
+  if (at(0, 4) === '<svg' || at(0, 5) === '<?xml' || at(0, 9) === '<!DOCTYPE') return 'svg';
+  return 'unknown';
+}
+const FORMAT_NAME = { tiff: 'TIFF', jxl: 'JPEG XL' };
+const HEIC_HELP = 'HEIC photos need a decoder that is not in this build. Add the libheif bundle to vendor/libheif/ (see the README), or convert the photo to JPEG first.';
+
+// SVG, and any format the image element decodes but createImageBitmap does not, go through an <img>.
+function decodeWithImage(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob), img = new Image();
+    img.onload = () => {
+      const w = Math.min(4096, img.naturalWidth || 1024), h = Math.min(4096, img.naturalHeight || 1024);
+      const c = canvasOf(w, h);
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      createImageBitmap(c).then(resolve, reject);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('The image element could not decode it.')); };
+    img.src = url;
+  });
+}
+function loadScript(src) {
+  return new Promise(resolve => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+let heicReady = null;
+// Loads the libheif bundle and the adapter once. Returns the decode function, or null when no decoder is present.
+function loadHeicDecoder() {
+  if (typeof window.heicDecode === 'function') return Promise.resolve(window.heicDecode);
+  if (!heicReady) {
+    heicReady = loadScript('vendor/libheif/libheif.js')
+      .then(() => loadScript('vendor/libheif/heic-decode.js'))
+      .then(() => (typeof window.heicDecode === 'function' ? window.heicDecode : null));
+  }
+  return heicReady;
+}
+async function decodeHeic(blob) {
+  const decode = await loadHeicDecoder();
+  if (!decode) throw new Error(HEIC_HELP);
+  return decode(blob);
+}
+// Turns a decoded bitmap into the asset: the full-size bitmap, and a preview-size copy.
+async function finishAsset(id, name, blob, full) {
   const s = Math.min(1, MAX_WORK / Math.max(full.width, full.height));
   const work = s < 1
     ? await createImageBitmap(full, { resizeWidth: Math.max(1, Math.round(full.width * s)),
@@ -1330,10 +1406,23 @@ async function decodeAsset(id, name, blob) {
     : full;
   return { id, name, blob, full, work };
 }
-function heicMsg(file) {
-  say(/hei[cf]/i.test(file.name + ' ' + file.type)
-    ? 'HEIC/HEIF: most desktop browsers cannot decode this. Convert it to JPEG or PNG first.'
-    : 'Could not decode this image.');
+async function decodeAsset(id, name, blob) {
+  const kind = sniffFormat(new Uint8Array(await blob.slice(0, 64).arrayBuffer()));
+  if (kind === 'heic') return finishAsset(id, name, blob, await decodeHeic(blob));
+  if (kind === 'tiff' || kind === 'jxl') {
+    throw new Error(`${FORMAT_NAME[kind]} photos are not supported yet. Convert the photo to JPEG or PNG first.`);
+  }
+  let full;
+  try {
+    full = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  } catch (e) {
+    try { full = await decodeWithImage(blob); }
+    catch (e2) { throw new Error(`Could not open ${name}. The file may be damaged, or in a format this browser cannot read.`); }
+  }
+  return finishAsset(id, name, blob, full);
+}
+function heicMsg(file, e) {
+  say(e && e.message ? e.message : `Could not open ${file.name}.`);
 }
 function showCanvas() {
   $('view').hidden = false; $('canvas-wrap').hidden = false; $('tools').hidden = false; $('empty').hidden = true;
@@ -1639,7 +1728,7 @@ function drawCloneSource(g, k) {
 async function openFile(file) {
   state.stack = [];
   let a;
-  try { a = await decodeAsset(newId('A'), file.name, file); } catch (e) { heicMsg(file); return false; }
+  try { a = await decodeAsset(newId('A'), file.name, file); } catch (e) { heicMsg(file, e); return false; }
   state.assets = new Map([[a.id, a]]);
   state.masks = new Map();
   state.doc = { w: a.work.width, h: a.work.height, fw: a.full.width, fh: a.full.height };
@@ -1664,7 +1753,7 @@ async function openFile(file) {
 async function addImageFile(file, exposure = false) {
   if (!state.doc) return openFile(file);
   let a;
-  try { a = await decodeAsset(newId('A'), file.name, file); } catch (e) { heicMsg(file); return false; }
+  try { a = await decodeAsset(newId('A'), file.name, file); } catch (e) { heicMsg(file, e); return false; }
   state.assets.set(a.id, a);
   const L = imageLayer(a, file.name);
   if (exposure) { L.blend = 'screen'; L.opacity = 60; L.name = 'Double exposure: ' + file.name; }
@@ -1837,7 +1926,7 @@ $('add-input').onchange = e => { const f = e.target.files[0]; const exp = state.
 addEventListener('dragover', e => e.preventDefault());
 addEventListener('drop', e => {
   e.preventDefault();
-  const f = [...e.dataTransfer.files].find(x => x.type.startsWith('image/') || /\.hei[cf]$/i.test(x.name));
+  const f = [...e.dataTransfer.files].find(isImageFile);
   if (f) (state.doc ? addImageFile(f) : openFile(f));
 });
 addEventListener('paste', e => {

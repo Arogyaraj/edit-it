@@ -88,6 +88,16 @@ Clipping (J) shows blown highlights in red and crushed shadows in blue. Hold **B
 ## Run
 Serve the folder over HTTP (the service worker needs http://localhost or HTTPS): `python3 -m http.server 8080`, then open http://localhost:8080. Opening index.html directly works for editing, but install and offline caching need HTTP.
 
+## Formats
+- Opens JPEG, PNG (and APNG), GIF, WebP, AVIF, BMP, ICO, and SVG. The format is read from the file's contents, so a file with the wrong extension still opens. Drag, paste, and the Open button all accept these.
+- **HEIC (iPhone photos):** browsers can't decode HEIC, so edit-it loads a decoder from `vendor/libheif/` if one is there. To enable it:
+  1. Get the browser bundle of [libheif-js](https://github.com/catdad/libheif-js) (the file that defines the global `libheif`).
+  2. Save it as `vendor/libheif/libheif.js`.
+  3. Keep `vendor/libheif/heic-decode.js` next to it. That adapter is already in the package.
+
+  Without the bundle, HEIC files show a message explaining what to add. The adapter was written against libheif-js's documented API and tested only with a stub decoder. Test it with a real HEIC file before relying on it.
+- TIFF and JPEG XL aren't decodable in browsers without a separate pure JavaScript decoder. They show a message asking you to convert the photo first.
+
 ## Included
 - Mobile:
   - Portrait phones: the inspector is a bottom sheet with a handle. Tap the handle to hide or show it; the handle stays visible when the panel is hidden. The tab row and the photo keep their place as you scroll.

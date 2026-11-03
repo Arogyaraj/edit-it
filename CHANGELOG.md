@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.0
+
+- Formats are detected from the file's contents, so a renamed file still opens.
+- Opens JPEG, PNG, GIF, WebP, AVIF, BMP, ICO and SVG (the browser decodes them; SVG goes through the image element).
+- HEIC: the app loads a decoder from `vendor/libheif/` when it is present. The adapter (`vendor/libheif/heic-decode.js`) is written for libheif-js's documented API. The decoder bundle itself is not in the package, so HEIC shows a clear message until you add it. The adapter has been tested with a stub decoder only, not with real HEIC files.
+- TIFF and JPEG XL get a clear message. They are not decodable in browsers without a pure JavaScript decoder, which is not included.
+- Clear messages for files that can't be opened, instead of a generic failure.
+
+## 2.0.2
+
+- Faster rendering: the GL result is copied straight to the accelerated 2D canvas, the view is no longer forced onto the CPU, and the GL canvas is resized only when its size changes.
+- Pixel readback now happens only where a CPU filter needs it (the 256-pixel histogram, curves, sharpen, noise reduction, healing, auto tone) and, while clipping is on, for the clipping overlay. A normal render reads back only the histogram copy.
+- A readback test counts pixel reads during renders, so this can't regress unnoticed.
+- Still on the CPU: blend modes, masks, layer styles and the curve, sharpen and denoise filters run on the 2D canvas, which Chrome accelerates where it can. A full WebGL compositor is not in this release.
+
 ## 2.0.1
 
 - Fixed: the clipping overlay and other pixel readbacks (clipping, curves, sharpen, heal, auto tone, histogram) now use canvases created with `willReadFrequently`. Chrome was copying those canvases from the GPU on every render and logged a performance warning.
